@@ -1,0 +1,290 @@
+# Test builds use the shared test bundle. Review uses a different bundle, team, and key.
+#
+# Test, Pgyer (starts on every push to main):
+#   Workflow: Yoohoo Test Pgyer
+#   Bundle ID: com.sewhkek.sjdeww
+#   Display name in the project: test
+#   Developer Portal API key name: cow chat
+#   Signing team: 35TUXP935T
+#   Secret group: yoohoo_credentials, variable CERTIFICATE_PRIVATE_KEY
+#
+# Test, App Store Connect upload without review (manual):
+#   Workflow: Yoohoo Test App Store Connect
+#   submit_to_testflight: false
+#
+# Review upload is manual. Write this product's own bundle into the release
+# workflow before running it. The script does not read $BUNDLE_ID, refuses the
+# test signing key, and refuses the test bundle.
+
+workflows:
+  yoohoo-ios-pgyer:
+    name: Yoohoo Test Pgyer
+    max_build_duration: 90
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: "cow chat"
+    environment:
+      groups:
+        - yoohoo_credentials
+      vars:
+        XCODE_PROJECT: Yoohoo.xcodeproj
+        XCODE_SCHEME: Yoohoo
+      xcode: latest
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+      cancel_previous_builds: true
+    scripts:
+      - name: Set up keychain
+        script: keychain initialize
+      - name: Use the test bundle ID
+        script: |
+          sed -i '' -E 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/PRODUCT_BUNDLE_IDENTIFIER = com.sewhkek.sjdeww;/g' \
+            "$CM_BUILD_DIR/$XCODE_PROJECT/project.pbxproj"
+      - name: Fetch Ad Hoc signing files
+        script: |
+          app-store-connect fetch-signing-files "com.sewhkek.sjdeww" \
+            --type IOS_APP_ADHOC \
+            --create
+      - name: Add signing certificate
+        script: keychain add-certificates
+      - name: Apply provisioning profiles
+        script: xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT"
+      - name: Build Ad Hoc IPA
+        script: |
+          xcode-project build-ipa \
+            --project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME" \
+            --archive-flags="-destination 'generic/platform=iOS'"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+  yoohoo-ios-app-store:
+    name: Yoohoo Test App Store Connect
+    max_build_duration: 90
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: "cow chat"
+    environment:
+      groups:
+        - yoohoo_credentials
+      vars:
+        XCODE_PROJECT: Yoohoo.xcodeproj
+        XCODE_SCHEME: Yoohoo
+      xcode: latest
+    scripts:
+      - name: Set up keychain
+        script: keychain initialize
+      - name: Use the test bundle ID
+        script: |
+          sed -i '' -E 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/PRODUCT_BUNDLE_IDENTIFIER = com.sewhkek.sjdeww;/g' \
+            "$CM_BUILD_DIR/$XCODE_PROJECT/project.pbxproj"
+      - name: Fetch App Store signing files
+        script: |
+          app-store-connect fetch-signing-files "com.sewhkek.sjdeww" \
+            --type IOS_APP_STORE \
+            --create
+      - name: Add signing certificate
+        script: keychain add-certificates
+      - name: Apply provisioning profiles
+        script: xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT"
+      - name: Build App Store IPA
+        script: |
+          xcode-project build-ipa \
+            --project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME" \
+            --archive-flags="-destination 'generic/platform=iOS'"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false
+
+  yoohoo-ios-release:
+    name: Yoohoo Release App Store Connect
+    max_build_duration: 90
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: yoohoo
+    environment:
+      groups:
+        - yoohoo_release_credentials
+      vars:
+        XCODE_PROJECT: Yoohoo.xcodeproj
+        XCODE_SCHEME: Yoohoo
+      xcode: latest
+    scripts:
+      - name: Reject the test signing key and the test bundle
+        script: |
+          python3 - <<'PY'
+          import hashlib, os, subprocess, tempfile
+          bundle = "SET_YOOHOO_REVIEW_BUNDLE_ID"
+          if bundle in {"", "SET_YOOHOO_REVIEW_BUNDLE_ID", "com.sewhkek.sjdeww", "com.lume.letht"}:
+              raise SystemExit("Write this product's own review bundle into the release workflow before uploading")
+          key = os.environ.get("CERTIFICATE_PRIVATE_KEY", "")
+          if "PRIVATE KEY" not in key:
+              raise SystemExit("yoohoo_release_credentials must define CERTIFICATE_PRIVATE_KEY")
+          fd, name = tempfile.mkstemp()
+          os.close(fd)
+          try:
+              with open(name, "w", encoding="utf-8") as handle:
+                  handle.write(key if key.endswith("\n") else key + "\n")
+              os.chmod(name, 0o600)
+              result = subprocess.run(
+                  ["openssl", "rsa", "-in", name, "-noout", "-modulus"],
+                  check=False, capture_output=True, text=True)
+          finally:
+              os.remove(name)
+          if result.returncode != 0 or "=" not in result.stdout:
+              raise SystemExit("The release signing key could not be read")
+          raw = bytes.fromhex(result.stdout.strip().split("=", 1)[1]).lstrip(b"\x00")
+          digest = hashlib.sha256(raw).hexdigest()
+          if digest == "53fd99d8b74e2d108978977b38da2075f91340219b74387792bab8efe38176c5":
+              raise SystemExit("Refusing the test account signing key")
+          PY
+      - name: Set up keychain
+        script: keychain initialize
+      - name: Use the review bundle ID
+        script: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          bundle = "SET_YOOHOO_REVIEW_BUNDLE_ID"
+          if bundle in {"", "SET_YOOHOO_REVIEW_BUNDLE_ID", "com.sewhkek.sjdeww", "com.lume.letht"}:
+              raise SystemExit("Write this product's own review bundle into the release workflow before uploading")
+          path = Path(os.environ["CM_BUILD_DIR"]) / os.environ["XCODE_PROJECT"] / "project.pbxproj"
+          text = path.read_text()
+          text = re.sub(r"PRODUCT_BUNDLE_IDENTIFIER = [^;]+;", f"PRODUCT_BUNDLE_IDENTIFIER = {bundle};", text)
+          text = re.sub(r"\n[ \t]*DEVELOPMENT_TEAM = 35TUXP935T;", "", text)
+          parts = text.split("name = Release;")
+          if len(parts) < 3:
+              raise SystemExit("Could not find the Release target settings")
+          middle = parts[1]
+          needle = f"PRODUCT_BUNDLE_IDENTIFIER = {bundle};"
+          index = middle.rfind(needle)
+          if index < 0:
+              raise SystemExit("Release bundle identifier was not updated")
+          flag = "\n\t\t\t\tSWIFT_ACTIVE_COMPILATION_CONDITIONS = YOOHOO_APPSTORE;"
+          if "SWIFT_ACTIVE_COMPILATION_CONDITIONS = YOOHOO_APPSTORE;" not in middle:
+              middle = middle[:index + len(needle)] + flag + middle[index + len(needle):]
+          updated = "name = Release;".join([parts[0], middle, *parts[2:]])
+          if "com.sewhkek.sjdeww" in updated:
+              raise SystemExit("Test bundle ID is still in the Xcode project")
+          path.write_text(updated)
+          print("Release bundle ID is", bundle)
+          PY
+      - name: Enable Sign in with Apple for the review bundle
+        script: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+
+          bundle = "SET_YOOHOO_REVIEW_BUNDLE_ID"
+          if bundle in {"", "SET_YOOHOO_REVIEW_BUNDLE_ID", "com.sewhkek.sjdeww", "com.lume.letht"}:
+              raise SystemExit("Write this product's own review bundle into the release workflow before uploading")
+
+          def run(args):
+              result = subprocess.run(["app-store-connect", "--json", *args], capture_output=True, text=True)
+              if result.returncode != 0:
+                  raise SystemExit(result.stderr.strip() or result.stdout.strip() or "App Store Connect request failed")
+              text = result.stdout.strip()
+              if not text:
+                  return []
+              try:
+                  data = json.loads(text)
+              except json.JSONDecodeError:
+                  data = [json.loads(line) for line in text.splitlines() if line.strip()[:1] in "{["]
+              if isinstance(data, dict):
+                  data = data.get("data", [data])
+              return data
+
+          bundles = run([
+              "bundle-ids", "list",
+              "--bundle-id-identifier", bundle,
+              "--platform", "IOS",
+              "--strict-match-identifier",
+          ])
+          bundles = [item for item in bundles if item.get("attributes", {}).get("identifier") == bundle]
+          if not bundles:
+              created = run(["bundle-ids", "create", bundle, "--platform", "IOS", "--name", "Yoohoo"])
+              bundles = created if isinstance(created, list) else [created]
+          bundle_resource_id = bundles[0]["id"]
+          capabilities = run(["bundle-ids", "capabilities", bundle_resource_id])
+          enabled = {item.get("attributes", {}).get("capabilityType") for item in capabilities}
+          if "APPLE_ID_AUTH" not in enabled:
+              subprocess.run(
+                  ["app-store-connect", "bundle-ids", "enable-capabilities", bundle_resource_id, "--capability", "Sign In with Apple"],
+                  check=True,
+              )
+          profiles = run([
+              "bundle-ids", "profiles",
+              "--bundle-ids", bundle_resource_id,
+              "--type", "IOS_APP_STORE",
+          ])
+          for profile in profiles:
+              subprocess.run(
+                  ["app-store-connect", "profiles", "delete", profile["id"], "--ignore-not-found"],
+                  check=True,
+              )
+          print("Sign in with Apple is enabled for", bundle)
+          PY
+      - name: Fetch App Store signing files
+        script: |
+          python3 - <<'PY'
+          import os
+          bundle = "SET_YOOHOO_REVIEW_BUNDLE_ID"
+          if bundle in {"", "SET_YOOHOO_REVIEW_BUNDLE_ID", "com.sewhkek.sjdeww", "com.lume.letht"}:
+              raise SystemExit("Write this product's own review bundle into the release workflow before uploading")
+          os.environ["YOOHOO_REVIEW_BUNDLE"] = bundle
+          PY
+          app-store-connect fetch-signing-files "SET_YOOHOO_REVIEW_BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          python3 - <<'PY'
+          import pathlib
+          import plistlib
+          import subprocess
+
+          bundle = "SET_YOOHOO_REVIEW_BUNDLE_ID"
+          roots = [
+              pathlib.Path.home() / "Library/Developer/Xcode/UserData/Provisioning Profiles",
+              pathlib.Path.home() / "Library/MobileDevice/Provisioning Profiles",
+          ]
+          matched = False
+          for root in roots:
+              for profile in root.glob("*.mobileprovision"):
+                  decoded = subprocess.run(["security", "cms", "-D", "-i", str(profile)], capture_output=True, check=True)
+                  plist = plistlib.loads(decoded.stdout)
+                  app_id = plist.get("Entitlements", {}).get("application-identifier", "")
+                  if not app_id.endswith(bundle):
+                      continue
+                  matched = True
+                  if "com.apple.developer.applesignin" not in plist.get("Entitlements", {}):
+                      raise SystemExit("The App Store profile has no Sign in with Apple")
+          if not matched:
+              raise SystemExit("No App Store profile for the review bundle was downloaded")
+          print("Release profile includes Sign in with Apple")
+          PY
+      - name: Add signing certificate
+        script: keychain add-certificates
+      - name: Apply provisioning profiles
+        script: xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT"
+      - name: Build App Store IPA
+        script: |
+          xcode-project build-ipa \
+            --project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME" \
+            --archive-flags="-destination 'generic/platform=iOS' PRODUCT_BUNDLE_IDENTIFIER=SET_YOOHOO_REVIEW_BUNDLE_ID"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false

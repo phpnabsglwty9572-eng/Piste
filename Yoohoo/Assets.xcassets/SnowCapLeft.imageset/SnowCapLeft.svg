@@ -1,0 +1,16 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="18.4" height="15.0421" viewBox="0 0 18.4 15.0421" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Snow &#194;&#183; top-left corner cap" filter="url(#filter0_d_0_43)">
+<path d="M1.5 11.8111C1.5 6.95814 5.44012 2.10514 10.2558 1.66395C12.4448 -0.100776 15.0715 0.340406 16.3849 1.66395C18.1361 3.42868 15.0715 5.19341 12.4448 5.63459C10.2558 6.07577 9.81804 8.28169 8.06687 8.28169C5.87792 7.8405 5.87792 11.37 4.12675 12.2523C2.81337 12.6935 1.93779 12.6935 1.5 11.8111Z" fill="white"/>
+</g>
+<defs>
+<filter id="filter0_d_0_43" x="0" y="-1.96157e-08" width="18.4" height="15.0421" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="1"/>
+<feGaussianBlur stdDeviation="0.75"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.662745 0 0 0 0 0.733333 0 0 0 0 0.788235 0 0 0 0.16 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_0_43"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_0_43" result="shape"/>
+</filter>
+</defs>
+</svg>

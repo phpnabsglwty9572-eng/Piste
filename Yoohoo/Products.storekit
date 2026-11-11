@@ -1,0 +1,133 @@
+{
+  "identifier" : "YoohooCoins",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "0.99",
+      "familyShareable" : false,
+      "internalID" : "C400",
+      "localizations" : [
+        {
+          "description" : "Adds 400 coins.",
+          "displayName" : "400 Coins",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "6zdz3v2alwput2vo2",
+      "referenceName" : "400 Coins",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "1.99",
+      "familyShareable" : false,
+      "internalID" : "C800",
+      "localizations" : [
+        {
+          "description" : "Adds 800 coins.",
+          "displayName" : "800 Coins",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "74s0kqa23h3vjb6o9bb",
+      "referenceName" : "800 Coins",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "C2450",
+      "localizations" : [
+        {
+          "description" : "Adds 2450 coins.",
+          "displayName" : "2450 Coins",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "u1g6h9wj1i9ykfnmkgv",
+      "referenceName" : "2450 Coins",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "C5150",
+      "localizations" : [
+        {
+          "description" : "Adds 5150 coins.",
+          "displayName" : "5150 Coins",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "wq9s6664bp2r0drdv",
+      "referenceName" : "5150 Coins",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "19.99",
+      "familyShareable" : false,
+      "internalID" : "C10800",
+      "localizations" : [
+        {
+          "description" : "Adds 10800 coins.",
+          "displayName" : "10800 Coins",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "7nnk6a5itntmqozk1w52",
+      "referenceName" : "10800 Coins",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "49.99",
+      "familyShareable" : false,
+      "internalID" : "C29400",
+      "localizations" : [
+        {
+          "description" : "Adds 29400 coins.",
+          "displayName" : "29400 Coins",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "mq8ufjhoq1oflb67xi",
+      "referenceName" : "29400 Coins",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "99.99",
+      "familyShareable" : false,
+      "internalID" : "C63700",
+      "localizations" : [
+        {
+          "description" : "Adds 63700 coins.",
+          "displayName" : "63700 Coins",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "95ywicsa7y52jpo33p",
+      "referenceName" : "63700 Coins",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "YOOHOO",
+    "_askToBuyEnabled" : false,
+    "_billingGracePeriodEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_developerTeamID" : "",
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

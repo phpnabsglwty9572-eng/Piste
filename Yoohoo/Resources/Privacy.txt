@@ -1,0 +1,30 @@
+Privacy Policy
+Application Name: Yoohoo
+Effective Date: November 11, 2026
+Last Updated: November 11, 2026
+Contact Email: xxxx@email.com
+
+1. Information We Process
+When you create an account, we process the email address, password, display name, avatar, and profile background you provide.
+Sign in with Apple provides an Apple user identifier. Apple shares your name only on the first authorization, and the App keeps that name on the device so it can fill an empty profile name later.
+Posts, comments, messages, live-room activity, reports, blocks, and coin purchases are stored so the App can show them to you and to the people you interact with.
+
+2. How We Use Information
+We use this information to operate accounts, show content, deliver messages, credit coins after a confirmed purchase, and review reports.
+We do not sell personal information.
+
+3. Device Access
+The photo library is used only when you choose an avatar, a profile background, or a post attachment.
+The camera and microphone are used when you start a call or a live preview.
+
+4. Retention and Deletion
+You can delete your account from Settings. Deletion removes the profile and the content tied to it, except where we must keep a record for safety or legal reasons.
+You can also email xxxx@email.com with the subject "Account Deletion Request – Yoohoo".
+
+5. Children
+The App is for adults aged 18 or older. We do not knowingly collect information from children.
+
+6. Contact
+Application: Yoohoo
+Email: xxxx@email.com
+Child Safety Email: xxxx@email.com
