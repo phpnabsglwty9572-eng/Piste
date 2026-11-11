@@ -142,7 +142,7 @@ struct LiveRoomView: View {
                         .foregroundStyle(.white)
                         .frame(maxWidth: 244, alignment: .leading)
                 } else {
-                    (Text(line.name).foregroundStyle(YoohooColor.yellow) + Text(" " + line.text).foregroundStyle(.white))
+                    (Text(line.name).foregroundColor(YoohooColor.yellow) + Text(" " + line.text).foregroundColor(.white))
                         .font(YoohooFont.medium(12))
                         .lineLimit(1)
                 }

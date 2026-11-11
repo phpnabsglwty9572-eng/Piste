@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 enum AppStage: Equatable {
     case splash

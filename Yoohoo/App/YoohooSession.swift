@@ -102,11 +102,11 @@ final class YoohooSession: ObservableObject {
     @Published var coins = 200
     @Published var followedCount = 2344
     @Published var fanCount = 71
-    @Published var people: [ChatPerson] = Self.designPeople
-    @Published var lines: [ChatLine] = Self.designLines
-    @Published var cards: [FeedCard] = Self.designCards
-    @Published var posts: [PostItem] = Self.designPosts
-    @Published var comments: [CommentItem] = Self.designComments
+    @Published var people: [ChatPerson] = YoohooSession.designPeople
+    @Published var lines: [ChatLine] = YoohooSession.designLines
+    @Published var cards: [FeedCard] = YoohooSession.designCards
+    @Published var posts: [PostItem] = YoohooSession.designPosts
+    @Published var comments: [CommentItem] = YoohooSession.designComments
     @Published var blocked: Set<String> = []
     @Published var localImages: [String: UIImage] = [:]
     @Published var frameAsset = "AvatarFrame"
