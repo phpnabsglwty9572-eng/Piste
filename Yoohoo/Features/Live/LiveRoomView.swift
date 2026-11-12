@@ -1,3 +1,4 @@
+import AVKit
 import SwiftUI
 
 struct LiveLine: Identifiable, Equatable {
@@ -13,11 +14,9 @@ struct LiveRoomView: View {
     @EnvironmentObject private var session: YoohooSession
     @State private var draft = ""
     @State private var lines: [LiveLine] = [
-        LiveLine(name: "", text: "Welcome! Respect others and keep chats positive. No hate or offensive comments. Enjoy our friendly live space.", welcome: true),
-        LiveLine(name: "Thalassa", text: "That jump was insane!"),
-        LiveLine(name: "Thalassa", text: "Snow looks perfect today"),
-        LiveLine(name: "Maren", text: "Powder day vibes ❄️")
+        LiveLine(name: "", text: "Welcome! Respect others and keep chats positive. No hate or offensive comments. Enjoy our friendly live space.", welcome: true)
     ]
+    @State private var audience: [AudiencePerson] = []
     @FocusState private var composing: Bool
     @State private var giftSender = ""
     @State private var giftAsset = "Gift10"
@@ -27,11 +26,7 @@ struct LiveRoomView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             GeometryReader { geo in
-                Image("LiveStage")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: geo.size.width, height: geo.size.height, alignment: .bottom)
-                    .clipped()
+                stage(geo.size)
             }
             .ignoresSafeArea()
             VStack(spacing: 0) {
@@ -85,7 +80,7 @@ struct LiveRoomView: View {
                 Color.black.opacity(0.5)
                     .ignoresSafeArea()
                     .onTapGesture { showAudience = false }
-                LiveAudienceSheet(onClose: { showAudience = false })
+                LiveAudienceSheet(people: audience, onClose: { showAudience = false })
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
         }
@@ -95,6 +90,7 @@ struct LiveRoomView: View {
         }
         .background(NavigationGestureRelay())
         .navigationBarHidden(true)
+        .task { await openRoom() }
     }
 
     private var topBar: some View {
@@ -110,16 +106,14 @@ struct LiveRoomView: View {
             Button { showAudience = true } label: {
                 HStack(spacing: 2) {
                     HStack(spacing: -15) {
-                        ForEach(["LiveFace1", "LiveFace2", "LiveFace3", "LiveFace4", "LiveFace5"], id: \.self) { name in
-                            Image(name)
-                                .resizable()
-                                .scaledToFill()
+                        ForEach(audience.prefix(5)) { person in
+                            UserImage(name: person.avatar)
                                 .frame(width: 28, height: 28)
                                 .clipShape(Circle())
                                 .overlay(Circle().stroke(.white, lineWidth: 0.5))
                         }
                     }
-                    Text("40+")
+                    Text("\(audience.count)")
                         .font(YoohooFont.heavy(12))
                         .foregroundStyle(.black)
                         .frame(width: 28, height: 28)
@@ -135,30 +129,26 @@ struct LiveRoomView: View {
 
     private var hostChip: some View {
         HStack(spacing: 0) {
-            Button { nav.push(.profile(hostID)) } label: {
-                Image("AvatarKianu")
-                    .resizable()
-                    .frame(width: 33 * 1.0036, height: 33 * 1.5)
-                    .offset(x: 33 * -0.0018, y: 33 * -0.1333)
-                    .frame(width: 33, height: 33, alignment: .topLeading)
-                    .clipped()
+            Button { nav.push(.profile(ownerID)) } label: {
+                UserImage(name: room?.avatar ?? "")
+                    .frame(width: 33, height: 33)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white, lineWidth: 1))
             }
             .buttonStyle(PressDownStyle())
             VStack(alignment: .leading, spacing: 0) {
-                Text("Kianu")
+                Text(hostName)
                     .font(YoohooFont.heavy(16))
                     .foregroundStyle(.white)
                     .frame(height: 18, alignment: .top)
-                Text("@ki85d2")
+                Text(room?.handle ?? "")
                     .font(YoohooFont.medium(12))
                     .foregroundStyle(.white)
                     .frame(height: 17, alignment: .top)
             }
             .padding(.leading, 4)
             if hostFollowed == false {
-                Button { session.toggleFollow(hostID) } label: {
+                Button { session.toggleFollow(ownerID) } label: {
                     Image("BadgePlus")
                         .resizable()
                         .scaledToFit()
@@ -227,7 +217,7 @@ struct LiveRoomView: View {
             .buttonStyle(PressDownStyle())
             .layoutPriority(1)
             liveIconButton("LiveGift", filled: true) { showGifts = true }
-            liveIconButton("MoreCircle", filled: false) { nav.sheet = .about(.person(hostID)) }
+            liveIconButton("MoreCircle", filled: false) { nav.sheet = .about(.person(ownerID)) }
             ShareLink(item: "\(hostName) is live") {
                 Image("LiveShare")
                     .resizable()
@@ -295,21 +285,61 @@ struct LiveRoomView: View {
         )
     }
 
-    private var hostFollowed: Bool {
-        session.cards.first { $0.userID == hostID }?.followed ?? false
+    private var room: FeedCard? {
+        session.cards.first { $0.id == hostID }
     }
 
-    private var hostName: String {
-        session.cards.first { $0.userID == hostID }?.name ?? "Kianu"
+    private var ownerID: String { room?.userID ?? "" }
+
+    private var hostFollowed: Bool { session.isFollowed(ownerID) }
+
+    private var hostName: String { room?.name ?? "" }
+
+    private func stage(_ size: CGSize) -> some View {
+        Group {
+            if let video = room?.videoURL, let url = URL(string: video), video.hasPrefix("http") {
+                LoopingVideo(url: url)
+            } else if let photo = room?.photo, photo.hasPrefix("http") {
+                UserImage(name: photo)
+            } else {
+                Image("LiveStage").resizable().scaledToFill()
+            }
+        }
+        .frame(width: size.width, height: size.height, alignment: .bottom)
+        .clipped()
     }
 
-    private func playGift(_ asset: String) {
-        let sender = session.meName.isEmpty ? "Saffira" : session.meName
-        giftAsset = asset
-        giftSender = sender
+    private func openRoom() async {
+        guard let roomID = UUID(uuidString: hostID), let me = UUID(uuidString: session.meID) else { return }
+        try? await YoohooBackend.joinRoom(roomID, user: me)
+        let members = (try? await YoohooBackend.roomMembers(roomID)) ?? []
+        audience = members.map { id in
+            let key = id.uuidString.lowercased()
+            let known = session.known[key]
+            return AudiencePerson(id: key, userID: key, name: known?.name ?? "", handle: known?.handle ?? "", avatar: known?.avatar ?? "")
+        }
+        let rows = (try? await YoohooBackend.roomMessages(roomID)) ?? []
+        var next = [LiveLine(name: "", text: "Welcome! Respect others and keep chats positive. No hate or offensive comments. Enjoy our friendly live space.", welcome: true)]
+        next += rows.map { row in
+            let key = row.senderID.uuidString.lowercased()
+            return LiveLine(id: row.id.uuidString, name: session.known[key]?.name ?? "", text: row.body)
+        }
+        lines = next
+    }
+
+    private func playGift(_ asset: String, _ price: Int) {
         Task {
-            try? await Task.sleep(nanoseconds: 2_200_000_000)
-            if giftSender == sender && giftAsset == asset { giftSender = "" }
+            guard let roomID = UUID(uuidString: hostID) else { return }
+            do {
+                let gems = try await YoohooBackend.sendGift(room: roomID, cost: price, label: asset)
+                session.coins = gems
+                giftAsset = asset
+                giftSender = session.meName
+                try? await Task.sleep(nanoseconds: 2_200_000_000)
+                if giftAsset == asset { giftSender = "" }
+            } catch {
+                session.show(error.localizedDescription)
+            }
         }
     }
 
@@ -317,8 +347,16 @@ struct LiveRoomView: View {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         draft = ""
-        lines.append(LiveLine(name: session.meName.isEmpty ? "Saffira" : session.meName, text: text))
         composing = false
+        Task {
+            guard let roomID = UUID(uuidString: hostID), let me = UUID(uuidString: session.meID) else { return }
+            do {
+                try await YoohooBackend.sendRoomMessage(room: roomID, sender: me, body: text)
+                await openRoom()
+            } catch {
+                session.show(error.localizedDescription)
+            }
+        }
     }
 }
 
@@ -329,7 +367,7 @@ private struct LiveGiftItem {
 
 struct LiveGiftShop: View {
     var onClose: () -> Void
-    var onSend: (String) -> Void
+    var onSend: (String, Int) -> Void
     @EnvironmentObject private var nav: AppNavigator
     @EnvironmentObject private var session: YoohooSession
     @State private var selected = 0
@@ -439,9 +477,8 @@ struct LiveGiftShop: View {
             session.show("Not enough coins.")
             return
         }
-        session.coins -= gift.price
         onClose()
-        onSend(gift.asset)
+        onSend(gift.asset, gift.price)
     }
 }
 
@@ -454,14 +491,10 @@ private struct AudiencePerson: Identifiable {
 }
 
 struct LiveAudienceSheet: View {
+    var people: [AudiencePerson]
     var onClose: () -> Void
     @EnvironmentObject private var nav: AppNavigator
     @EnvironmentObject private var session: YoohooSession
-    @State private var people = [
-        AudiencePerson(id: "a1", userID: "kianu", name: "Kianu", handle: "@ki85d2", avatar: "AvatarKianu"),
-        AudiencePerson(id: "a2", userID: "maren", name: "Maren", handle: "@dks553", avatar: "AvatarMaren"),
-        AudiencePerson(id: "a3", userID: "kianu", name: "Kianu", handle: "@ki85d2", avatar: "AvatarKianu")
-    ]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -511,9 +544,7 @@ struct LiveAudienceSheet: View {
                 onClose()
                 nav.push(.profile(person.userID))
             } label: {
-                Image(person.avatar)
-                    .resizable()
-                    .scaledToFill()
+                UserImage(name: person.avatar)
                     .frame(width: 40, height: 40)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(YoohooColor.blue, lineWidth: 1))
@@ -543,5 +574,35 @@ struct LiveAudienceSheet: View {
         .padding(.horizontal, 8)
         .frame(height: 56)
         .background(RoundedRectangle(cornerRadius: 10).fill(.white).overlay(RoundedRectangle(cornerRadius: 10).stroke(YoohooColor.pink, lineWidth: 1)))
+    }
+}
+
+private struct LoopingVideo: UIViewControllerRepresentable {
+    var url: URL
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let player = AVPlayer(url: url)
+        let controller = AVPlayerViewController()
+        controller.player = player
+        controller.showsPlaybackControls = false
+        controller.videoGravity = .resizeAspectFill
+        context.coordinator.observe(player)
+        player.play()
+        return controller
+    }
+
+    func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {}
+
+    final class Coordinator {
+        private var observer: NSObjectProtocol?
+
+        func observe(_ player: AVPlayer) {
+            observer = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main) { _ in
+                player.seek(to: .zero)
+                player.play()
+            }
+        }
     }
 }

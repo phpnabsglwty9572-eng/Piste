@@ -224,12 +224,16 @@ struct PostCard: View {
         ZStack(alignment: .topLeading) {
             TabView(selection: $page) {
                 ForEach(0..<max(post.pageCount, post.photos.count), id: \.self) { index in
-                    let name = post.photos[index % max(post.photos.count, 1)]
+                    let name = post.photos.isEmpty ? "" : post.photos[index % post.photos.count]
                     Group {
-                        if let local = session.localImages[name] {
+                        if name.hasPrefix("http") {
+                            UserImage(name: name)
+                        } else if let local = session.localImages[name] {
                             Image(uiImage: local)
                                 .resizable()
                                 .scaledToFill()
+                        } else if name.isEmpty {
+                            Color(red: 0.85, green: 0.93, blue: 1)
                         } else {
                             Image(name)
                                 .resizable()
@@ -301,9 +305,7 @@ struct PostCard: View {
 
     private var author: some View {
         HStack(spacing: 4) {
-            Image(post.avatar)
-                .resizable()
-                .scaledToFill()
+            UserImage(name: post.avatar)
                 .frame(width: 33, height: 33)
                 .clipShape(RoundedRectangle(cornerRadius: post.isVideo ? 12 : 10))
                 .overlay(RoundedRectangle(cornerRadius: post.isVideo ? 12 : 10).stroke(.white, lineWidth: 1))
@@ -416,19 +418,14 @@ struct PostDetailView: View {
                 Button("Delete") { session.deleteComment(line.id) }
             } else {
                 Button("Report") { report(line.id) }
-                Button("Add to Blacklist") { nav.sheet = .block(line.author.lowercased(), pop: false) }
+                Button("Add to Blacklist") { nav.sheet = .block(line.userID, pop: false) }
             }
         }
     }
 
     private func commentFace(_ line: CommentItem) -> some View {
-        let crop = commentCrop(line.author)
-        return Image(line.avatar)
-            .resizable()
-            .frame(width: 26 * crop.width, height: 26 * crop.height)
-            .offset(x: 26 * crop.left, y: 26 * crop.top)
-            .frame(width: 26, height: 26, alignment: .topLeading)
-            .clipped()
+        UserImage(name: line.avatar)
+            .frame(width: 26, height: 26)
             .clipShape(Circle())
     }
 
@@ -479,6 +476,7 @@ struct PostDetailView: View {
     }
 
     private func report(_ id: String) {
+        session.reportTarget = id
         nav.sheet = .report
     }
 }
@@ -487,6 +485,7 @@ struct ComposePostView: View {
     @EnvironmentObject private var nav: AppNavigator
     @EnvironmentObject private var session: YoohooSession
     @State private var videoMode = false
+    @State private var videoData: Data?
     @State private var images: [UIImage] = []
     @State private var videoPicked = false
     @State private var caption = ""
@@ -532,13 +531,11 @@ struct ComposePostView: View {
         .onChange(of: picker) { item in
             guard let item else { return }
             Task {
-                if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
-                    if videoMode {
-                        videoPicked = true
-                        images = [image]
-                    } else if images.count < 9 {
-                        images.append(image)
-                    }
+                if videoMode, let data = try? await item.loadTransferable(type: Data.self) {
+                    videoData = data
+                    videoPicked = true
+                } else if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data), images.count < 9 {
+                    images.append(image)
                 }
                 picker = nil
             }
@@ -633,15 +630,18 @@ struct ComposePostView: View {
         guard !session.busy, ready else { return }
         session.startLoading()
         let text = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        let names = images.isEmpty ? [] : ["PostSlopes"]
-        let video = videoMode
-        let chosen = tags
+        let shots = images
+        let clip = videoMode ? videoData : nil
         Task {
-            try? await Task.sleep(nanoseconds: 450_000_000)
-            session.publish(caption: text, tags: chosen, photos: names, video: video, image: images.first)
-            session.stopLoading()
-            session.show("Posted.")
-            nav.pop()
+            do {
+                try await session.publishMedia(caption: text, images: clip == nil ? shots : [], video: clip)
+                session.stopLoading()
+                session.show("Posted.")
+                nav.pop()
+            } catch {
+                session.stopLoading()
+                session.show(error.localizedDescription)
+            }
         }
     }
 }
@@ -735,7 +735,10 @@ struct AboutSheet: View {
     @ViewBuilder
     private var rows: some View {
         if isChat {
-            row("MenuReport", "Report") { nav.sheet = .report }
+            row("MenuReport", "Report") {
+                session.reportTarget = personID
+                nav.sheet = .report
+            }
             row("MenuTrash", "Delete Chat") {
                 if case .chat(let id) = target {
                     nav.sheet = .deleteChat(id)
@@ -748,7 +751,10 @@ struct AboutSheet: View {
                 }
             }
         } else {
-            row("MenuReport", "Report") { nav.sheet = .report }
+            row("MenuReport", "Report") {
+                session.reportTarget = personID
+                nav.sheet = .report
+            }
             row("MenuSad", "Add to Blacklist") {
                 nav.sheet = .block(personID, pop: true)
             }
@@ -811,10 +817,12 @@ struct ReportSheet: View {
                 guard !body.isEmpty, !session.busy else { return }
                 nav.sheet = nil
                 session.startLoading()
+                let reason = body
+                let target = session.reportTarget
                 Task {
-                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    session.reportTarget = target
+                    await session.fileReport(reason)
                     session.stopLoading()
-                    session.show("Reported.")
                 }
             }
             .padding(.bottom, 12)

@@ -73,13 +73,14 @@ struct ProfileView: View {
     }
 
     private var coverImage: some View {
-        Group {
-            if mine, let photo = session.localCover {
+        let remote = mine ? session.coverAsset : (session.known[userID]?.cover ?? "")
+        return Group {
+            if remote.hasPrefix("http") {
+                UserImage(name: remote)
+            } else if mine, let photo = session.localCover {
                 Image(uiImage: photo).resizable().scaledToFill()
             } else {
-                Image(mine ? session.coverAsset : (userID == "seren" ? "SerenCover" : "ProfileCover"))
-                    .resizable()
-                    .scaledToFill()
+                Image("ProfileCover").resizable().scaledToFill()
             }
         }
         .frame(maxWidth: .infinity)
@@ -89,10 +90,14 @@ struct ProfileView: View {
     private var avatar: some View {
         ZStack(alignment: .bottomTrailing) {
             Group {
-                if mine, let photo = session.localAvatar {
+                if avatarURL.hasPrefix("http") {
+                    UserImage(name: avatarURL)
+                } else if mine, let photo = session.localAvatar {
                     Image(uiImage: photo).resizable().scaledToFill()
+                } else if avatarURL.isEmpty == false {
+                    Image(avatarURL).resizable().scaledToFill()
                 } else {
-                    Image(mine ? session.avatarAsset : avatarName).resizable().scaledToFill()
+                    Image("AIUserFace").resizable().scaledToFill()
                 }
             }
             .frame(width: 70, height: 70)
@@ -116,11 +121,11 @@ struct ProfileView: View {
         .frame(width: 80, height: 80)
     }
 
-    private var avatarName: String {
-        session.posts.first { $0.userID == userID }?.avatar
-            ?? session.people.first { $0.id == userID }?.avatar
-            ?? YoohooSession.profile(userID)?.avatar
-            ?? "AvatarSaffira"
+    private var avatarURL: String {
+        if mine { return session.avatarAsset }
+        return session.known[userID]?.avatar
+            ?? session.posts.first { $0.userID == userID }?.avatar
+            ?? ""
     }
 
     private var identity: some View {
@@ -154,8 +159,10 @@ struct ProfileView: View {
                 .buttonStyle(PressDownStyle())
             } else {
                 Button {
-                    session.ensureChat(userID)
-                    nav.push(.chat(userID))
+                    Task {
+                        await session.ensureChat(userID)
+                        nav.push(.chat(userID))
+                    }
                 } label: {
                     HStack(spacing: 4) {
                         Image("ChatNow").resizable().scaledToFit().frame(width: 44, height: 44)
@@ -183,26 +190,24 @@ struct ProfileView: View {
     }
 
     private var displayName: String {
-        if mine { return session.meName.isEmpty ? "Saffira" : session.meName }
-        return session.posts.first { $0.userID == userID }?.name
-            ?? session.people.first { $0.id == userID }?.name
-            ?? YoohooSession.profile(userID)?.name
-            ?? "Yoohoo"
+        if mine { return session.meName }
+        return session.known[userID]?.name
+            ?? session.posts.first { $0.userID == userID }?.name
+            ?? ""
     }
 
     private var displayHandle: String {
-        if mine { return session.meName.isEmpty ? "@sa8d52" : "@yoohoo" }
-        return session.posts.first { $0.userID == userID }?.handle
-            ?? session.people.first { $0.id == userID }?.handle
-            ?? YoohooSession.profile(userID)?.handle
+        if mine { return session.meHandle }
+        return session.known[userID]?.handle
+            ?? session.posts.first { $0.userID == userID }?.handle
             ?? ""
     }
 
     private var stats: some View {
         HStack(spacing: 0) {
-            stat(mine ? "\(session.followedCount)" : "108", "Followed")
+            stat(mine ? "\(session.followedCount)" : "0", "Followed")
             divider
-            stat(mine ? "\(session.fanCount)" : "33", "Fans")
+            stat(mine ? "\(session.fanCount)" : "0", "Fans")
             divider
             stat(mine ? "\(session.blocked.count)" : "0", "Blacklist")
         }

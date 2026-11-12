@@ -26,6 +26,9 @@ struct HomeView: View {
         VStack(spacing: 0) {
             header
             VStack(spacing: 16) {
+                if session.cards.isEmpty {
+                    EmptyPenguin(message: "No more data").frame(height: 280)
+                }
                 ForEach(session.cards) { card in
                     HomeCard(card: card)
                 }
@@ -131,7 +134,9 @@ struct HomeView: View {
 
     private var homeFace: some View {
         Group {
-            if let photo = session.localAvatar {
+            if session.avatarAsset.hasPrefix("http") {
+                UserImage(name: session.avatarAsset)
+            } else if let photo = session.localAvatar {
                 Image(uiImage: photo).resizable().scaledToFill()
             } else {
                 Image("AIUserFace")
@@ -230,16 +235,19 @@ struct HomeCard: View {
 
     private var photo: some View {
         ZStack(alignment: .topLeading) {
-            Image(card.photo)
-                .resizable()
-                .frame(width: 343 * cardCrop.width, height: 343 * cardCrop.height)
-                .offset(x: 343 * cardCrop.left, y: 343 * cardCrop.top)
-                .frame(width: 343, height: 343, alignment: .topLeading)
-                .clipped()
-                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            if card.photo.hasPrefix("http") {
+                UserImage(name: card.photo)
+                    .frame(width: 343, height: 343)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            } else {
+                Color(red: 0.85, green: 0.93, blue: 1)
+                    .frame(width: 343, height: 343)
+                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            }
             liveBadge
                 .padding(8)
-            Button { nav.push(.live(card.userID)) } label: {
+            Button { nav.push(.live(card.id)) } label: {
                 Image("PlayButton")
                     .resizable()
                     .frame(width: 34, height: 34)
@@ -272,13 +280,6 @@ struct HomeCard: View {
         .frame(width: 343, height: 343)
     }
 
-    private var cardCrop: (width: CGFloat, height: CGFloat, left: CGFloat, top: CGFloat) {
-        if card.id == "elowen" {
-            return (1.0004, 1.7784, -0.0002, -0.2491)
-        }
-        return (1.0008, 1.2886, -0.0004, -0.1195)
-    }
-
     private var liveBadge: some View {
         HStack(spacing: 3) {
             Image("LiveGlyph")
@@ -298,25 +299,14 @@ struct HomeCard: View {
     }
 
     private var face: some View {
-        let crop = avatarCrop
-        return Button { nav.push(.profile(card.userID)) } label: {
-            Image(card.avatar)
-            .resizable()
-            .frame(width: 33 * crop.width, height: 33 * crop.height)
-            .offset(x: 33 * crop.left, y: 33 * crop.top)
-            .frame(width: 33, height: 33, alignment: .topLeading)
+        Button { nav.push(.profile(card.userID)) } label: {
+            UserImage(name: card.avatar)
+            .frame(width: 33, height: 33)
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white, lineWidth: 1))
         }
         .buttonStyle(PressDownStyle())
-    }
-
-    private var avatarCrop: (width: CGFloat, height: CGFloat, left: CGFloat, top: CGFloat) {
-        if card.id == "elowen" {
-            return (1, 1.227, 0, -0.2195)
-        }
-        return (1.0036, 1.5, -0.0018, -0.1333)
     }
 
     private var authorChip: some View {

@@ -149,8 +149,10 @@ struct RootView: View {
                 message: "Are you sure you want to log out? You will need to sign in again to access your account.",
                 confirm: {
                     nav.sheet = nil
-                    session.signedIn = false
-                    nav.openAuth()
+                    Task {
+                        await session.signOut()
+                        nav.openAuth()
+                    }
                 },
                 close: { nav.sheet = nil }
             )
@@ -160,8 +162,10 @@ struct RootView: View {
                 message: "Are you sure you want to delete your account? This action cannot be undone, and all your data will be permanently erased.",
                 confirm: {
                     nav.sheet = nil
-                    session.eraseAccount()
-                    nav.openAuth()
+                    Task {
+                        await session.eraseAccount()
+                        if session.signedIn == false { nav.openAuth() }
+                    }
                 },
                 close: { nav.sheet = nil }
             )

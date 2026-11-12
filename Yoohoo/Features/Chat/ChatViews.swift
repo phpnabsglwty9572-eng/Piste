@@ -5,7 +5,7 @@ struct ChatListView: View {
     @EnvironmentObject private var session: YoohooSession
 
     private var threads: [ChatPerson] {
-        session.people.filter { !$0.preview.isEmpty && !session.blocked.contains($0.id) }
+        session.people.filter { !session.blocked.contains($0.id) }
     }
 
     var body: some View {
@@ -112,9 +112,7 @@ struct ChatListView: View {
     private func personCard(_ person: ChatPerson) -> some View {
         VStack(spacing: 2) {
             ZStack(alignment: .bottomTrailing) {
-                Image(person.avatar)
-                    .resizable()
-                    .scaledToFill()
+                UserImage(name: person.avatar)
                     .frame(width: 40, height: 40)
                     .clipShape(Circle())
                     .overlay(Circle().stroke(YoohooColor.pink, lineWidth: 1))
@@ -137,9 +135,7 @@ struct ChatListView: View {
     private func threadRow(_ person: ChatPerson) -> some View {
         Button { nav.push(.chat(person.id)) } label: {
             HStack(alignment: .top, spacing: 8) {
-                Image(person.avatar)
-                    .resizable()
-                    .scaledToFill()
+                UserImage(name: person.avatar)
                     .frame(width: 45, height: 45)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                 VStack(alignment: .leading, spacing: 2) {
@@ -222,9 +218,7 @@ struct ChatThreadView: View {
             HStack(alignment: .top, spacing: 4) {
                 if line.mine { Spacer(minLength: 16) }
                 if !line.mine, let person {
-                    Image(person.avatar)
-                        .resizable()
-                        .scaledToFill()
+                    UserImage(name: person.avatar)
                         .frame(width: 35, height: 35)
                         .clipShape(Circle())
                 }
@@ -246,9 +240,7 @@ struct ChatThreadView: View {
                     )
                 if !line.mine { Spacer(minLength: 16) }
                 if line.mine {
-                    Image("AvatarSaffira")
-                        .resizable()
-                        .scaledToFill()
+                    UserImage(name: session.avatarAsset)
                         .frame(width: 35, height: 35)
                         .clipShape(Circle())
                 }
@@ -288,9 +280,7 @@ struct ChatThreadView: View {
 
     private func authorChip(_ person: ChatPerson) -> some View {
         HStack(spacing: 4) {
-            Image(person.avatar)
-                .resizable()
-                .scaledToFill()
+            UserImage(name: person.avatar)
                 .frame(width: 33, height: 33)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white, lineWidth: 1))

@@ -72,34 +72,11 @@ struct PeopleListView: View {
     var kind: String
     @EnvironmentObject private var session: YoohooSession
 
-    private var rows: [(id: String, name: String, handle: String, avatar: String)] {
+    private var rows: [ChatPerson] {
         switch kind {
-        case "Fans":
-            return [
-                ("kianu", "Kianu", "@ki85d2", "AvatarKianu"),
-                ("maren", "Maren", "@dks553", "AIUserFace"),
-                ("saffira-list", "Saffira", "@de5s8d", "FanSaffira"),
-                ("veyra", "Veyra", "@seje8de", "AvatarIsolde")
-            ]
-        case "Blacklist":
-            return session.blocked.map { id in
-                if let known = YoohooSession.profile(id) {
-                    return (id, known.name, known.handle, known.avatar)
-                }
-                return (id, id, "", "AvatarSaffira")
-            }
-        default:
-            let base: [(id: String, name: String, handle: String, avatar: String)] = [
-                ("maren", "Maren", "@dks553", "AvatarMaren"),
-                ("saffira-list", "Saffira", "@de5s8d", "AvatarSaffiraList"),
-                ("veyra", "Veyra", "@seje8de", "AvatarIsolde"),
-                ("kaelin", "Kaelin", "@didjd55", "AvatarKaelin")
-            ]
-            let extras = session.extraFollowed.compactMap { id -> (id: String, name: String, handle: String, avatar: String)? in
-                guard let known = YoohooSession.profile(id) else { return nil }
-                return (id, known.name, known.handle, known.avatar)
-            }
-            return base + extras
+        case "Fans": return session.fanPeople
+        case "Blacklist": return session.blockedPeople
+        default: return session.followedPeople
         }
     }
 
@@ -120,11 +97,9 @@ struct PeopleListView: View {
         }
     }
 
-    private func personRow(_ person: (id: String, name: String, handle: String, avatar: String)) -> some View {
+    private func personRow(_ person: ChatPerson) -> some View {
         HStack(spacing: 8) {
-            Image(person.avatar)
-                .resizable()
-                .scaledToFill()
+            UserImage(name: person.avatar)
                 .frame(width: 40, height: 40)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay(
@@ -214,10 +189,10 @@ struct FeedbackSheet: View {
                 guard !body.isEmpty, !session.busy else { return }
                 nav.sheet = nil
                 session.startLoading()
+                let message = body
                 Task {
-                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    await session.fileFeedback(message)
                     session.stopLoading()
-                    session.show("Sent.")
                 }
             }
             .padding(.bottom, 12)

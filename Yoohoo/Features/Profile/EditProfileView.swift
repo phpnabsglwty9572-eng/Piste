@@ -1,4 +1,5 @@
 import PhotosUI
+import StoreKit
 import SwiftUI
 
 struct EditProfileView: View {
@@ -129,11 +130,21 @@ struct EditProfileView: View {
 
     private func save() {
         guard ready, !session.busy else { return }
-        session.meName = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(YoohooConfig.nameLimit))
-        session.localAvatar = avatar
-        session.localCover = cover
+        let chosen = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(YoohooConfig.nameLimit))
         session.frameAsset = frame
-        nav.pop()
+        session.startLoading()
+        Task {
+            do {
+                try await session.saveProfile(name: chosen, avatar: avatar, cover: cover)
+                session.localAvatar = nil
+                session.localCover = nil
+                session.stopLoading()
+                nav.pop()
+            } catch {
+                session.stopLoading()
+                session.show(error.localizedDescription)
+            }
+        }
     }
 }
 
@@ -252,8 +263,34 @@ struct CoinShopView: View {
         selected = pack.id
         session.startLoading()
         Task {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            session.stopLoading()
+            do {
+                let products = try await Product.products(for: [pack.id])
+                guard let product = products.first else {
+                    session.stopLoading()
+                    session.show(pack.id)
+                    return
+                }
+                let result = try await product.purchase()
+                switch result {
+                case .success(let verification):
+                    let transaction = try verification.payloadValue
+                    let gems = try await YoohooBackend.credit(transaction: String(transaction.id), product: pack.id)
+                    await transaction.finish()
+                    session.coins = gems
+                    session.stopLoading()
+                    session.show("Purchased.")
+                case .userCancelled:
+                    session.stopLoading()
+                case .pending:
+                    session.stopLoading()
+                    session.show("Purchase is pending.")
+                @unknown default:
+                    session.stopLoading()
+                }
+            } catch {
+                session.stopLoading()
+                session.show(error.localizedDescription)
+            }
         }
     }
 }

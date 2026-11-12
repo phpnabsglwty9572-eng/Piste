@@ -32,6 +32,7 @@ struct AIChatView: View {
         .background(Color.white)
         .background(NavigationGestureRelay())
         .navigationBarHidden(true)
+        .task { await loadHistory() }
     }
 
     private var header: some View {
@@ -279,13 +280,12 @@ struct AIChatView: View {
 
     private var face: some View {
         Group {
-            if let image = session.localAvatar {
+            if session.avatarAsset.hasPrefix("http") {
+                UserImage(name: session.avatarAsset)
+            } else if let image = session.localAvatar {
                 Image(uiImage: image).resizable().scaledToFill()
             } else {
-                Image("AIUserFace")
-                    .resizable()
-                    .frame(width: 35 * 1.0042, height: 35 * 1.7556)
-                    .offset(x: 35 * -0.0021, y: 35 * -0.2667)
+                Color.white.opacity(0.35)
             }
         }
         .frame(width: 35, height: 35)
@@ -325,6 +325,12 @@ struct AIChatView: View {
         }
     }
 
+    private func loadHistory() async {
+        let rows = (try? await YoohooBackend.aiLines()) ?? []
+        guard lines.isEmpty else { return }
+        lines = rows.map { AILine(id: $0.id, mine: $0.mine, text: $0.body) }
+    }
+
     private func send(_ raw: String) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, thinking == false else { return }
@@ -335,10 +341,12 @@ struct AIChatView: View {
         thinking = true
         let reply = answer(for: text)
         Task {
+            try? await YoohooBackend.addAI(mine: true, body: text)
             try? await Task.sleep(nanoseconds: 700_000_000)
             thinking = false
             let id = UUID()
             lines.append(AILine(id: id, mine: false, text: "", full: reply, typing: true))
+            try? await YoohooBackend.addAI(mine: false, body: reply)
             for count in 1...reply.count {
                 try? await Task.sleep(nanoseconds: 16_000_000)
                 guard let index = lines.firstIndex(where: { $0.id == id }) else { return }

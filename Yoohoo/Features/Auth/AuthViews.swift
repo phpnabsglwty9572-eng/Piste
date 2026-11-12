@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SplashView: View {
     @EnvironmentObject private var nav: AppNavigator
+    @EnvironmentObject private var session: YoohooSession
 
     var body: some View {
         GeometryReader { geo in
@@ -17,8 +18,10 @@ struct SplashView: View {
         .navigationBarHidden(true)
         .onAppear {
             Task {
-                try? await Task.sleep(nanoseconds: 1_100_000_000)
-                if nav.stage == .splash { nav.openAuth() }
+                await session.restore()
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                guard nav.stage == .splash else { return }
+                if session.signedIn { nav.enterApp() } else { nav.openAuth() }
             }
         }
     }
@@ -119,15 +122,9 @@ struct AuthLandingView: View {
         session.startLoading()
         do {
             let credential = try await AppleSignIn.request()
-            session.rememberAppleName(credential.fullName, userID: credential.userID)
-            session.applyAppleNameIfNeeded(userID: credential.userID, currentName: session.meName, email: nil)
+            try await session.signInWithApple(token: credential.identityToken, nonce: credential.nonce, userID: credential.userID, fullName: credential.fullName)
             session.stopLoading()
-            if YoohooConfig.backendReady {
-                session.show("The Yoohoo test project is not wired to Apple yet.")
-            } else {
-                session.signedIn = true
-                nav.enterApp()
-            }
+            nav.enterApp()
         } catch let error as AppleSignInError where error == .cancelled {
             session.stopLoading()
         } catch {
@@ -219,17 +216,22 @@ struct AccountFormView: View {
         guard !session.busy, ready else { return }
         session.startLoading()
         let display = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(YoohooConfig.nameLimit))
+        let address = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let secret = password
         Task {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            session.stopLoading()
-            if mode == .register {
-                session.meName = display
-                nav.push(.registerPhotos)
-            } else if YoohooConfig.backendReady {
-                session.show("Connect this product's test Supabase before signing in.")
-            } else {
-                session.signedIn = true
-                nav.enterApp()
+            do {
+                if mode == .register {
+                    try await session.register(email: address, password: secret, name: display)
+                    session.stopLoading()
+                    nav.push(.registerPhotos)
+                } else {
+                    try await session.signIn(email: address, password: secret)
+                    session.stopLoading()
+                    nav.enterApp()
+                }
+            } catch {
+                session.stopLoading()
+                session.show(error.localizedDescription)
             }
         }
     }
@@ -316,13 +318,13 @@ struct RegisterPhotosView: View {
         guard !session.busy, ready else { return }
         session.startLoading()
         Task {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            session.stopLoading()
-            if YoohooConfig.backendReady {
-                session.show("Connect this product's test Supabase before creating an account.")
-            } else {
-                session.signedIn = true
+            do {
+                try await session.saveProfile(name: session.meName, avatar: avatar, cover: background)
+                session.stopLoading()
                 nav.enterApp()
+            } catch {
+                session.stopLoading()
+                session.show(error.localizedDescription)
             }
         }
     }
