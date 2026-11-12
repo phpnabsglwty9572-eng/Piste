@@ -28,8 +28,6 @@ struct AIChatView: View {
                 header
                 sheet
             }
-            controls
-                .padding(.top, 8)
         }
         .background(Color.white)
         .background(NavigationGestureRelay())
@@ -40,10 +38,9 @@ struct AIChatView: View {
         ZStack(alignment: .topLeading) {
             Image("HomeSky")
                 .resizable()
-                .scaledToFill()
-                .frame(width: 375, height: 260 * 2.4038, alignment: .top)
+                .frame(width: 375, height: 260 * 2.4038)
                 .offset(y: -260 * 0.2769)
-                .frame(width: 375, height: 260, alignment: .top)
+                .frame(width: 375, height: 260, alignment: .topLeading)
                 .clipped()
             Image("SnowCap")
                 .resizable()
@@ -54,36 +51,41 @@ struct AIChatView: View {
             Image("FlakeB").resizable().frame(width: 25, height: 25).offset(x: 233, y: 167)
             Image("FlakeA")
                 .resizable()
-                .frame(width: 19, height: 30)
-                .scaleEffect(x: 1, y: -1)
-                .offset(x: 340, y: 61)
-            VStack(alignment: .leading, spacing: 12) {
+                .scaledToFill()
+                .frame(width: 19 * 1.5789, height: 30)
+                .offset(x: 19 * -0.5789)
+                .frame(width: 19, height: 30, alignment: .topLeading)
+                .clipped()
+                .scaleEffect(x: -1, y: -1)
+                .offset(x: 356, y: 61)
+            ZStack(alignment: .topLeading) {
                 Text("Glide into winter with Pegu")
                     .font(YoohooFont.display(20))
                     .foregroundStyle(.white)
                     .shadow(color: YoohooColor.titleShadow, radius: 0, y: 3)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .offset(y: 80)
                 Text("Fresh snow, cool goggles and endless fun. Let this tiny skier bring warmth and joy to your snowy days.")
                     .font(YoohooFont.body(14))
                     .foregroundStyle(.white)
                     .frame(width: 253, alignment: .leading)
+                    .offset(y: 118)
             }
-            .padding(.leading, 16)
-            .padding(.top, 80)
+            .frame(width: 253, height: 190, alignment: .topLeading)
+            .offset(x: 16)
             Image("Penguin")
                 .resizable()
-                .scaledToFill()
-                .frame(width: 164, height: 164)
-                .offset(x: -8, y: -14)
+                .frame(width: 150 * 1.0949, height: 140 * 1.1731)
+                .offset(x: 150 * -0.0511, y: 140 * -0.0983)
                 .frame(width: 150, height: 140, alignment: .topLeading)
                 .clipped()
                 .offset(x: 209, y: 144)
+            controls
+                .offset(y: 36)
         }
         .frame(width: 375, height: 260, alignment: .topLeading)
         .frame(maxWidth: .infinity)
         .overlay(alignment: .bottom) { SnowEdge() }
-        .ignoresSafeArea(edges: .top)
     }
 
     private var controls: some View {
@@ -125,7 +127,7 @@ struct AIChatView: View {
         }
         .padding(.leading, 2)
         .padding(.trailing, 8)
-        .frame(height: 34)
+        .frame(width: 122, height: 34, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(.white)
@@ -192,7 +194,7 @@ struct AIChatView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(8)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: text.count > 40 ? 56 : 40, alignment: .topLeading)
         .background(promptShape.fill(.white).overlay(promptShape.stroke(YoohooColor.blue, lineWidth: 1)))
     }
 
@@ -225,7 +227,7 @@ struct AIChatView: View {
     }
 
     private func lineRow(_ line: AILine) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 16) {
             if let stamp = line.stamp {
                 Text(stamp)
                     .font(YoohooFont.medium(12))
@@ -236,9 +238,9 @@ struct AIChatView: View {
                 if line.mine {
                     Spacer(minLength: 12)
                     bubble(line)
-                    face
+                    face.offset(y: -8)
                 } else {
-                    peguFace
+                    peguFace.offset(y: -8)
                     bubble(line)
                     Spacer(minLength: 12)
                 }
@@ -280,7 +282,10 @@ struct AIChatView: View {
             if let image = session.localAvatar {
                 Image(uiImage: image).resizable().scaledToFill()
             } else {
-                Image("AIUserFace").resizable().scaledToFill()
+                Image("AIUserFace")
+                    .resizable()
+                    .frame(width: 35 * 1.0042, height: 35 * 1.7556)
+                    .offset(x: 35 * -0.0021, y: 35 * -0.2667)
             }
         }
         .frame(width: 35, height: 35)
@@ -290,11 +295,12 @@ struct AIChatView: View {
     private var peguFace: some View {
         Image("Penguin")
             .resizable()
-            .scaledToFill()
-            .frame(width: 35, height: 33)
+            .frame(width: 35 * 1.0949, height: 35 * 1.1731)
+            .offset(x: 35 * -0.0511, y: 35 * -0.0983)
+            .frame(width: 35, height: 35, alignment: .topLeading)
+            .clipped()
             .background(Circle().fill(.black))
             .clipShape(Circle())
-            .frame(width: 35, height: 35)
     }
 
     private var thinkingRow: some View {

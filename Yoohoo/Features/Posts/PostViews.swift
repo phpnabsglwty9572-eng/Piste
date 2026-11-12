@@ -190,13 +190,14 @@ struct PostCard: View {
     @State private var playing = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             media
             Text(post.caption)
                 .font(YoohooFont.medium(16))
                 .foregroundStyle(YoohooColor.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack {
+                .padding(.top, 8)
+            HStack(alignment: .bottom) {
                 HStack(spacing: 8) {
                     ForEach(post.tags, id: \.self) { tag in
                         Text(tag)
@@ -211,7 +212,9 @@ struct PostCard: View {
                 Text(post.time)
                     .font(YoohooFont.medium(12))
                     .foregroundStyle(YoohooColor.gray)
+                    .offset(y: 4)
             }
+            .padding(.top, 4)
         }
         .padding(.horizontal, 16)
     }
@@ -229,10 +232,11 @@ struct PostCard: View {
                         } else {
                             Image(name)
                                 .resizable()
-                                .scaledToFill()
+                                .frame(width: 343 * crop.width, height: 380 * crop.height)
+                                .offset(x: 343 * crop.left, y: 380 * crop.top)
                         }
                     }
-                    .frame(width: 343, height: 380)
+                    .frame(width: 343, height: 380, alignment: .topLeading)
                     .clipped()
                     .tag(index)
                 }
@@ -285,14 +289,21 @@ struct PostCard: View {
         .onTapGesture { nav.push(.postDetail(post.id)) }
     }
 
+    private var crop: (width: CGFloat, height: CGFloat, left: CGFloat, top: CGFloat) {
+        if post.id == "lodge" {
+            return (1, 1.2031, 0, -0.2029)
+        }
+        return (1.0006, 1.1289, -0.0003, -0.1211)
+    }
+
     private var author: some View {
         HStack(spacing: 4) {
             Image(post.avatar)
                 .resizable()
                 .scaledToFill()
                 .frame(width: 33, height: 33)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: post.isVideo ? 12 : 10))
+                .overlay(RoundedRectangle(cornerRadius: post.isVideo ? 12 : 10).stroke(.white, lineWidth: 1))
             VStack(alignment: .leading, spacing: 0) {
                 Text(post.name).font(YoohooFont.heavy(16)).foregroundStyle(.white)
                 Text(post.handle).font(YoohooFont.medium(12)).foregroundStyle(.white)
@@ -303,7 +314,7 @@ struct PostCard: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 23, height: 23)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(.white))
+                        .background(RoundedRectangle(cornerRadius: post.isVideo ? 12 : 10).fill(.white))
                 }
                 .buttonStyle(PressDownStyle())
             }

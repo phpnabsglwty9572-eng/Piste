@@ -30,7 +30,7 @@ struct HomeView: View {
                     HomeCard(card: card)
                 }
             }
-            .padding(.top, 16)
+            .padding(.top, 40)
             .padding(.bottom, 96)
             .frame(maxWidth: .infinity)
             .background(Color.white)
@@ -41,9 +41,9 @@ struct HomeView: View {
         ZStack(alignment: .topLeading) {
             Image("HomeSky")
                 .resizable()
-                .scaledToFill()
-                .frame(width: 375, height: 260 * 2.4, alignment: .top)
-                .frame(width: 375, height: 260, alignment: .top)
+                .frame(width: 375, height: 260 * 2.4038)
+                .offset(y: -260 * 0.2769)
+                .frame(width: 375, height: 260, alignment: .topLeading)
                 .clipped()
             Image("SnowCap")
                 .resizable()
@@ -54,42 +54,49 @@ struct HomeView: View {
             Image("FlakeB").resizable().frame(width: 25, height: 25).offset(x: 233, y: 167)
             Image("FlakeA")
                 .resizable()
-                .frame(width: 19, height: 30)
-                .scaleEffect(x: 1, y: -1)
-                .offset(x: 340, y: 61)
+                .scaledToFill()
+                .frame(width: 19 * 1.5789, height: 30)
+                .offset(x: 19 * -0.5789)
+                .frame(width: 19, height: 30, alignment: .topLeading)
+                .clipped()
+                .scaleEffect(x: -1, y: -1)
+                .offset(x: 356, y: 61)
             Button {
                 nav.push(.ai)
             } label: {
-                VStack(alignment: .leading, spacing: 12) {
+                ZStack(alignment: .topLeading) {
                     Text("Glide into winter with Pegu")
                         .font(YoohooFont.display(20))
                         .foregroundStyle(.white)
                         .shadow(color: YoohooColor.titleShadow, radius: 0, y: 3)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                        .offset(y: 80)
                     Text("Fresh snow, cool goggles and endless fun. Let this tiny skier bring warmth and joy to your snowy days.")
                         .font(YoohooFont.body(14))
                         .foregroundStyle(.white)
                         .frame(width: 253, alignment: .leading)
+                        .offset(y: 118)
                 }
+                .frame(width: 253, height: 190, alignment: .topLeading)
             }
             .buttonStyle(PressDownStyle())
-            .padding(.leading, 16)
-            .padding(.top, 80)
+            .offset(x: 16, y: 0)
             Button {
                 nav.push(.ai)
             } label: {
                 Image("Penguin")
                     .resizable()
-                    .scaledToFit()
-                    .frame(width: 150, height: 140)
+                    .frame(width: 150 * 1.0949, height: 140 * 1.1731)
+                    .offset(x: 150 * -0.0511, y: 140 * -0.0983)
+                    .frame(width: 150, height: 140, alignment: .topLeading)
+                    .clipped()
             }
             .buttonStyle(PressDownStyle())
             .offset(x: 209, y: 144)
             avatar
                 .offset(x: 16, y: 214)
         }
-        .frame(width: 375, height: 284, alignment: .topLeading)
+        .frame(width: 375, height: 260, alignment: .topLeading)
         .overlay(alignment: .top) {
             SnowEdge().offset(y: 241)
         }
@@ -100,15 +107,15 @@ struct HomeView: View {
             nav.push(.profile(session.meID))
         } label: {
             ZStack(alignment: .topLeading) {
-                Image("AvatarSaffira")
-                    .resizable()
-                    .scaledToFill()
+                homeFace
                     .frame(width: 50, height: 50)
                     .clipShape(Circle())
                     .offset(x: 10, y: 10)
                 Image("AvatarFrame")
                     .resizable()
+                    .scaledToFill()
                     .frame(width: 70, height: 70)
+                    .clipped()
                 Image("EditBadge")
                     .resizable()
                     .frame(width: 24, height: 24)
@@ -117,6 +124,19 @@ struct HomeView: View {
             .frame(width: 70, height: 70, alignment: .topLeading)
         }
         .buttonStyle(PressDownStyle())
+    }
+
+    private var homeFace: some View {
+        Group {
+            if let photo = session.localAvatar {
+                Image(uiImage: photo).resizable().scaledToFill()
+            } else {
+                Image("AIUserFace")
+                    .resizable()
+                    .frame(width: 50 * 1.0042, height: 50 * 1.7556)
+                    .offset(x: 50 * -0.0021, y: 50 * -0.2667)
+            }
+        }
     }
 
     private var tabBar: some View {
@@ -182,11 +202,12 @@ struct HomeCard: View {
     @EnvironmentObject private var nav: AppNavigator
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             photo
             Text(card.caption)
                 .font(YoohooFont.medium(16))
                 .foregroundStyle(YoohooColor.ink)
+                .padding(.top, 8)
             HStack(spacing: 8) {
                 ForEach(card.tags, id: \.self) { tag in
                     Text(tag)
@@ -197,6 +218,7 @@ struct HomeCard: View {
                         .background(RoundedRectangle(cornerRadius: 4).fill(YoohooColor.ice))
                 }
             }
+            .padding(.top, 4)
         }
         .padding(.horizontal, 16)
     }
@@ -205,8 +227,10 @@ struct HomeCard: View {
         ZStack(alignment: .topLeading) {
             Image(card.photo)
                 .resizable()
-                .scaledToFill()
-                .frame(width: 343, height: 343)
+                .frame(width: 343 * cardCrop.width, height: 343 * cardCrop.height)
+                .offset(x: 343 * cardCrop.left, y: 343 * cardCrop.top)
+                .frame(width: 343, height: 343, alignment: .topLeading)
+                .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
             liveBadge
                 .padding(8)
@@ -238,6 +262,13 @@ struct HomeCard: View {
             .frame(width: 343, height: 343)
         }
         .frame(width: 343, height: 343)
+    }
+
+    private var cardCrop: (width: CGFloat, height: CGFloat, left: CGFloat, top: CGFloat) {
+        if card.id == "elowen" {
+            return (1.0004, 1.7784, -0.0002, -0.2491)
+        }
+        return (1.0008, 1.2886, -0.0004, -0.1195)
     }
 
     private var liveBadge: some View {
@@ -279,7 +310,7 @@ struct HomeCard: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 23, height: 23)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(.white))
+                    .background(RoundedRectangle(cornerRadius: 10).fill(.white))
                     .onTapGesture { session.toggleFollow(card.id) }
             }
         }
