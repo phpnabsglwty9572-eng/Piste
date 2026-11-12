@@ -105,9 +105,12 @@ struct ProfileView: View {
                     Image("EditBadge").resizable().frame(width: 24, height: 24)
                 }
                 .buttonStyle(PressDownStyle())
-            } else if !session.posts.contains(where: { $0.userID == userID && $0.followed }) {
-                Image("BadgePlus").resizable().scaledToFit().frame(width: 22, height: 22)
-                    .background(Circle().fill(.white).overlay(Circle().stroke(YoohooColor.pink, lineWidth: 1)))
+            } else if session.isFollowed(userID) == false {
+                Button { session.toggleFollow(userID) } label: {
+                    Image("BadgePlus").resizable().scaledToFit().frame(width: 22, height: 22)
+                        .background(Circle().fill(.white).overlay(Circle().stroke(YoohooColor.pink, lineWidth: 1)))
+                }
+                .buttonStyle(PressDownStyle())
             }
         }
         .frame(width: 80, height: 80)
@@ -116,6 +119,7 @@ struct ProfileView: View {
     private var avatarName: String {
         session.posts.first { $0.userID == userID }?.avatar
             ?? session.people.first { $0.id == userID }?.avatar
+            ?? YoohooSession.profile(userID)?.avatar
             ?? "AvatarSaffira"
     }
 
@@ -149,7 +153,10 @@ struct ProfileView: View {
                 }
                 .buttonStyle(PressDownStyle())
             } else {
-                Button { nav.push(.chat(userID)) } label: {
+                Button {
+                    session.ensureChat(userID)
+                    nav.push(.chat(userID))
+                } label: {
                     HStack(spacing: 4) {
                         Image("ChatNow").resizable().scaledToFit().frame(width: 44, height: 44)
                         Text("Chat Now")
@@ -179,6 +186,7 @@ struct ProfileView: View {
         if mine { return session.meName.isEmpty ? "Saffira" : session.meName }
         return session.posts.first { $0.userID == userID }?.name
             ?? session.people.first { $0.id == userID }?.name
+            ?? YoohooSession.profile(userID)?.name
             ?? "Yoohoo"
     }
 
@@ -186,6 +194,7 @@ struct ProfileView: View {
         if mine { return session.meName.isEmpty ? "@sa8d52" : "@yoohoo" }
         return session.posts.first { $0.userID == userID }?.handle
             ?? session.people.first { $0.id == userID }?.handle
+            ?? YoohooSession.profile(userID)?.handle
             ?? ""
     }
 
@@ -195,7 +204,7 @@ struct ProfileView: View {
             divider
             stat(mine ? "\(session.fanCount)" : "33", "Fans")
             divider
-            stat(mine ? "\(max(session.blocked.count, 1))" : "0", "Blacklist")
+            stat(mine ? "\(session.blocked.count)" : "0", "Blacklist")
         }
         .padding(.horizontal, 16)
     }

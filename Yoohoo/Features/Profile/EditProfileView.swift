@@ -140,14 +140,9 @@ struct EditProfileView: View {
 struct CoinShopView: View {
     @EnvironmentObject private var nav: AppNavigator
     @EnvironmentObject private var session: YoohooSession
-    @State private var selected = 5
+    @State private var selected = ""
 
-    private let packs: [(coins: Int, price: String, art: String)] = [
-        (5, "$5", "Coin5"), (10, "$10", "Coin10"),
-        (15, "$15", "Coin15"), (20, "$20", "Coin20"),
-        (25, "$25", "Coin25"), (30, "$30", "Coin30"),
-        (35, "$35", "Coin35"), (40, "$40", "Coin20")
-    ]
+    private var packs: [CoinPack] { CoinPack.catalog }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -156,7 +151,7 @@ struct CoinShopView: View {
                 VStack(spacing: 0) {
                     banner
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 13), GridItem(.flexible(), spacing: 13)], spacing: 32) {
-                        ForEach(packs, id: \.coins) { pack in
+                        ForEach(packs) { pack in
                             packCard(pack)
                         }
                     }
@@ -168,6 +163,9 @@ struct CoinShopView: View {
         }
         .background(NavigationGestureRelay())
         .navigationBarHidden(true)
+        .onAppear {
+            if selected.isEmpty { selected = packs.first?.id ?? "" }
+        }
     }
 
     private var banner: some View {
@@ -208,8 +206,8 @@ struct CoinShopView: View {
         .frame(height: 190)
     }
 
-    private func packCard(_ pack: (coins: Int, price: String, art: String)) -> some View {
-        let picked = selected == pack.coins
+    private func packCard(_ pack: CoinPack) -> some View {
+        let picked = selected == pack.id
         return VStack(spacing: 0) {
             Image(pack.art)
                 .resizable()
@@ -218,18 +216,20 @@ struct CoinShopView: View {
                 .frame(maxWidth: .infinity)
             HStack(spacing: 2) {
                 Image("CoinBadge").resizable().scaledToFit().frame(width: 14, height: 14)
-                Text("\(pack.coins)").font(YoohooFont.heavy(14)).foregroundStyle(YoohooColor.ink)
+                Text("\(pack.amount)").font(YoohooFont.heavy(14)).foregroundStyle(YoohooColor.ink)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 28)
             .background(Color(red: 252 / 255, green: 219 / 255, blue: 1))
             Button {
-                selected = pack.coins
-                buy(pack.coins)
+                selected = pack.id
+                buy(pack)
             } label: {
                 Text(pack.price)
                     .font(YoohooFont.title(20))
                     .foregroundStyle(YoohooColor.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                     .frame(width: 125, height: 32)
                     .background(RoundedRectangle(cornerRadius: 10).fill(YoohooColor.yellow).overlay(RoundedRectangle(cornerRadius: 10).stroke(YoohooColor.blue, lineWidth: 2)))
             }
@@ -244,11 +244,12 @@ struct CoinShopView: View {
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(picked ? YoohooColor.pink : YoohooColor.ice, lineWidth: 2))
                 .shadow(color: picked ? Color(red: 205 / 255, green: 0, blue: 143 / 255) : Color(red: 72 / 255, green: 96 / 255, blue: 1), radius: 0, y: 4)
         )
-        .onTapGesture { selected = pack.coins }
+        .onTapGesture { selected = pack.id }
     }
 
-    private func buy(_ amount: Int) {
-        guard !session.busy else { return }
+    private func buy(_ pack: CoinPack) {
+        guard !session.busy, pack.id.isEmpty == false else { return }
+        selected = pack.id
         session.startLoading()
         Task {
             try? await Task.sleep(nanoseconds: 500_000_000)

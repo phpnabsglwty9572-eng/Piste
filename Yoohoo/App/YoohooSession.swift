@@ -15,19 +15,21 @@ enum YoohooConfig {
 struct CoinPack: Identifiable {
     var id: String
     var amount: Int
+    var price: String
+    var art: String
 
     static var catalog: [CoinPack] {
         #if YOOHOO_APPSTORE
         return []
         #else
         return [
-            CoinPack(id: "6zdz3v2alwput2vo2", amount: 400),
-            CoinPack(id: "74s0kqa23h3vjb6o9bb", amount: 800),
-            CoinPack(id: "u1g6h9wj1i9ykfnmkgv", amount: 2450),
-            CoinPack(id: "wq9s6664bp2r0drdv", amount: 5150),
-            CoinPack(id: "7nnk6a5itntmqozk1w52", amount: 10800),
-            CoinPack(id: "mq8ufjhoq1oflb67xi", amount: 29400),
-            CoinPack(id: "95ywicsa7y52jpo33p", amount: 63700)
+            CoinPack(id: "6zdz3v2alwput2vo2", amount: 400, price: "$0.99", art: "Coin5"),
+            CoinPack(id: "74s0kqa23h3vjb6o9bb", amount: 800, price: "$1.99", art: "Coin10"),
+            CoinPack(id: "u1g6h9wj1i9ykfnmkgv", amount: 2450, price: "$4.99", art: "Coin15"),
+            CoinPack(id: "wq9s6664bp2r0drdv", amount: 5150, price: "$9.99", art: "Coin20"),
+            CoinPack(id: "7nnk6a5itntmqozk1w52", amount: 10800, price: "$19.99", art: "Coin25"),
+            CoinPack(id: "mq8ufjhoq1oflb67xi", amount: 29400, price: "$49.99", art: "Coin30"),
+            CoinPack(id: "95ywicsa7y52jpo33p", amount: 63700, price: "$99.99", art: "Coin35")
         ]
         #endif
     }
@@ -102,12 +104,14 @@ final class YoohooSession: ObservableObject {
     @Published var coins = 200
     @Published var followedCount = 2344
     @Published var fanCount = 71
+    @Published var followedIDs: Set<String> = YoohooSession.seedFollowed
+    @Published var extraFollowed: [String] = []
+    @Published var blocked: [String] = ["kaelin"]
     @Published var people: [ChatPerson] = YoohooSession.designPeople
     @Published var lines: [ChatLine] = YoohooSession.designLines
     @Published var cards: [FeedCard] = YoohooSession.designCards
     @Published var posts: [PostItem] = YoohooSession.designPosts
     @Published var comments: [CommentItem] = YoohooSession.designComments
-    @Published var blocked: Set<String> = []
     @Published var localImages: [String: UIImage] = [:]
     @Published var frameAsset = "AvatarFrame"
     @Published var coverAsset = "ProfileCover"
@@ -169,12 +173,42 @@ final class YoohooSession: ObservableObject {
         }
     }
 
+    func isFollowed(_ id: String) -> Bool {
+        followedIDs.contains(id)
+    }
+
     func toggleFollow(_ id: String) {
-        if let index = cards.firstIndex(where: { $0.id == id || $0.userID == id }) {
-            cards[index].followed.toggle()
+        setFollowed(id, !followedIDs.contains(id))
+    }
+
+    func setFollowed(_ id: String, _ value: Bool) {
+        guard followedIDs.contains(id) != value else {
+            applyFollowFlags(id, value)
+            return
         }
-        for index in posts.indices where posts[index].userID == id || posts[index].id == id {
-            posts[index].followed.toggle()
+        if value {
+            followedIDs.insert(id)
+            followedCount += 1
+            if Self.followedPageIDs.contains(id) == false && extraFollowed.contains(id) == false {
+                extraFollowed.append(id)
+            }
+        } else {
+            followedIDs.remove(id)
+            followedCount = max(0, followedCount - 1)
+            extraFollowed.removeAll { $0 == id }
+        }
+        applyFollowFlags(id, value)
+    }
+
+    private func applyFollowFlags(_ id: String, _ value: Bool) {
+        for index in cards.indices where cards[index].id == id || cards[index].userID == id {
+            cards[index].followed = value
+        }
+        for index in posts.indices where posts[index].id == id || posts[index].userID == id {
+            posts[index].followed = value
+        }
+        for index in people.indices where people[index].id == id {
+            people[index].followed = value
         }
     }
 
@@ -260,19 +294,92 @@ final class YoohooSession: ObservableObject {
     }
 
     func togglePersonFollow(_ id: String) {
-        guard let index = people.firstIndex(where: { $0.id == id }) else { return }
-        people[index].followed.toggle()
+        toggleFollow(id)
+    }
+
+    func ensureChat(_ id: String) {
+        guard people.contains(where: { $0.id == id }) == false else { return }
+        let known = Self.profile(id)
+        let post = posts.first { $0.userID == id }
+        let card = cards.first { $0.userID == id }
+        people.append(ChatPerson(
+            id: id,
+            name: card?.name ?? post?.name ?? known?.name ?? "Chat",
+            handle: card?.handle ?? post?.handle ?? known?.handle ?? "",
+            avatar: card?.avatar ?? post?.avatar ?? known?.avatar ?? "AvatarSaffira",
+            followed: followedIDs.contains(id),
+            preview: "",
+            time: ""
+        ))
     }
 
     func block(_ userID: String) {
-        blocked.insert(userID)
+        guard blocked.contains(userID) == false else { return }
+        if followedIDs.contains(userID) {
+            followedIDs.remove(userID)
+            followedCount = max(0, followedCount - 1)
+            extraFollowed.removeAll { $0 == userID }
+        }
+        applyFollowFlags(userID, false)
+        blocked.append(userID)
         posts.removeAll { $0.userID == userID }
         cards.removeAll { $0.userID == userID }
         people.removeAll { $0.id == userID }
+        comments.removeAll { authorID($0) == userID }
+    }
+
+    func unblock(_ userID: String) {
+        blocked.removeAll { $0 == userID }
+    }
+
+    func eraseAccount() {
+        signedIn = false
+        meName = ""
+        localAvatar = nil
+        localCover = nil
+        localImages = [:]
+        coins = 200
+        frameAsset = "AvatarFrame"
+        coverAsset = "ProfileCover"
+        avatarAsset = "AvatarSaffira"
+        posts = Self.designPosts.filter { $0.mine == false }
+        comments = Self.designComments
+        cards = Self.designCards
+        people = Self.designPeople
+        lines = Self.designLines
+        followedIDs = Self.seedFollowed
+        extraFollowed = []
+        blocked = ["kaelin"]
+        followedCount = 2344
+        fanCount = 71
     }
 
     private func authorID(_ comment: CommentItem) -> String {
         comment.mine ? meID : comment.author.lowercased()
+    }
+
+    static let seedFollowed: Set<String> = ["elowen", "sorrel", "caspian", "eirik", "isolde", "maren", "saffira-list", "veyra", "kaelin"]
+    static let followedPageIDs: Set<String> = ["maren", "saffira-list", "veyra", "kaelin"]
+
+    static func profile(_ id: String) -> (name: String, handle: String, avatar: String)? {
+        switch id {
+        case "kaelin": return ("Kaelin", "@didjd55", "AvatarKaelin")
+        case "kianu": return ("Kianu", "@ki85d2", "AvatarKianu")
+        case "elowen": return ("Elowen", "@wen992", "AvatarElowen")
+        case "seren": return ("Seren", "@dkd821", "AvatarSeren")
+        case "maren": return ("Maren", "@dks553", "AvatarMaren")
+        case "saffira-list": return ("Saffira", "@de5s8d", "FanSaffira")
+        case "veyra": return ("Veyra", "@seje8de", "AvatarIsolde")
+        case "rowan": return ("Rowan", "", "AvatarRowan")
+        case "thalassa": return ("Thalassa", "", "AvatarThalassa")
+        case "torin": return ("Torin", "", "AvatarTorin")
+        case "sorrel": return ("Sorrel", "@dk85ds", "AvatarSorrel")
+        case "liora": return ("Liora", "@dej8d3", "AvatarLiora")
+        case "caspian": return ("Caspian", "@de5d82", "AvatarCaspian")
+        case "eirik": return ("Eirik", "@8dej66", "AvatarEirik")
+        case "isolde": return ("Isolde", "@isolde", "AvatarIsolde")
+        default: return nil
+        }
     }
 
     static let designCards: [FeedCard] = [

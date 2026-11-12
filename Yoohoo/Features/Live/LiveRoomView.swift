@@ -18,37 +18,51 @@ struct LiveRoomView: View {
         LiveLine(name: "Thalassa", text: "Snow looks perfect today"),
         LiveLine(name: "Maren", text: "Powder day vibes ❄️")
     ]
-    @State private var followed = false
     @FocusState private var composing: Bool
     @State private var giftSender = ""
+    @State private var giftAsset = "Gift10"
     @State private var showGifts = false
     @State private var showAudience = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            Image("LiveStage")
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .clipped()
-                .ignoresSafeArea()
+            GeometryReader { geo in
+                Image("LiveStage")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height, alignment: .bottom)
+                    .clipped()
+            }
+            .ignoresSafeArea()
             VStack(spacing: 0) {
                 topBar
                 hostChip
                     .padding(.top, 12)
                 Spacer(minLength: 0)
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(lines) { line in
-                        lineBubble(line)
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(lines) { line in
+                                lineBubble(line).id(line.id)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 260, alignment: .bottom)
+                    }
+                    .onChange(of: lines.count) { _ in
+                        if let last = lines.last {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
                     }
                 }
+                .frame(maxHeight: 260)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 48)
                 if composing == false {
                     inputBar
-                        .padding(.bottom, 24)
+                        .padding(.bottom, 12)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             if giftSender.isEmpty == false {
                 giftBanner
                     .padding(.trailing, 0)
@@ -59,7 +73,6 @@ struct LiveRoomView: View {
                 Color.black.opacity(0.5)
                     .ignoresSafeArea()
                     .onTapGesture { composing = false }
-                composer
             }
             if showGifts {
                 Color.black.opacity(0.5)
@@ -75,6 +88,10 @@ struct LiveRoomView: View {
                 LiveAudienceSheet(onClose: { showAudience = false })
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if composing { composer }
         }
         .background(NavigationGestureRelay())
         .navigationBarHidden(true)
@@ -118,14 +135,17 @@ struct LiveRoomView: View {
 
     private var hostChip: some View {
         HStack(spacing: 0) {
-            Image("AvatarKianu")
-                .resizable()
-                .frame(width: 33 * 1.0036, height: 33 * 1.5)
-                .offset(x: 33 * -0.0018, y: 33 * -0.1333)
-                .frame(width: 33, height: 33, alignment: .topLeading)
-                .clipped()
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white, lineWidth: 1))
+            Button { nav.push(.profile(hostID)) } label: {
+                Image("AvatarKianu")
+                    .resizable()
+                    .frame(width: 33 * 1.0036, height: 33 * 1.5)
+                    .offset(x: 33 * -0.0018, y: 33 * -0.1333)
+                    .frame(width: 33, height: 33, alignment: .topLeading)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white, lineWidth: 1))
+            }
+            .buttonStyle(PressDownStyle())
             VStack(alignment: .leading, spacing: 0) {
                 Text("Kianu")
                     .font(YoohooFont.heavy(16))
@@ -137,8 +157,8 @@ struct LiveRoomView: View {
                     .frame(height: 17, alignment: .top)
             }
             .padding(.leading, 4)
-            if !followed {
-                Button { followed = true } label: {
+            if hostFollowed == false {
+                Button { session.toggleFollow(hostID) } label: {
                     Image("BadgePlus")
                         .resizable()
                         .scaledToFit()
@@ -188,7 +208,7 @@ struct LiveRoomView: View {
         HStack(spacing: 8) {
             Button { composing = true } label: {
                 HStack(spacing: 8) {
-                    Image("CommentSend").resizable().frame(width: 22, height: 22)
+                    Image("CommentSend").resizable().scaledToFit().frame(width: 22, height: 22)
                     Text(draft.isEmpty ? "Please enter..." : draft)
                         .font(YoohooFont.medium(12))
                         .foregroundStyle(.white)
@@ -196,7 +216,8 @@ struct LiveRoomView: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.leading, 8)
-                .frame(width: 205, height: 38, alignment: .leading)
+                .frame(maxWidth: 205)
+                .frame(height: 38)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color(white: 44 / 255).opacity(0.5))
@@ -204,42 +225,61 @@ struct LiveRoomView: View {
                 )
             }
             .buttonStyle(PressDownStyle())
-            Button { showGifts = true } label: {
-                Image("LiveGift").resizable().scaledToFit().frame(width: 26, height: 26)
-            }
-            .frame(width: 38, height: 38)
-            .background(RoundedRectangle(cornerRadius: 12).fill(.white).overlay(RoundedRectangle(cornerRadius: 12).stroke(YoohooColor.blue, lineWidth: 1)))
-            Button { nav.sheet = .about(.person(hostID)) } label: {
-                Image("MoreCircle").resizable().frame(width: 38, height: 38)
-            }
-            .buttonStyle(PressDownStyle())
-            Button(action: nav.pop) {
-                Image("LiveShare").resizable().frame(width: 38, height: 38)
+            .layoutPriority(1)
+            liveIconButton("LiveGift", filled: true) { showGifts = true }
+            liveIconButton("MoreCircle", filled: false) { nav.sheet = .about(.person(hostID)) }
+            ShareLink(item: "\(hostName) is live") {
+                Image("LiveShare")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 38, height: 38)
             }
             .buttonStyle(PressDownStyle())
         }
         .padding(.horizontal, 16)
+    }
+
+    private func liveIconButton(_ asset: String, filled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(asset)
+                .resizable()
+                .scaledToFit()
+                .frame(width: filled ? 26 : 38, height: filled ? 26 : 38)
+                .frame(width: 38, height: 38)
+                .background {
+                    if filled {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(.white)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(YoohooColor.blue, lineWidth: 1))
+                    }
+                }
+        }
+        .buttonStyle(PressDownStyle())
     }
 
     private var composer: some View {
         HStack(spacing: 8) {
             Image("CommentSend").resizable().frame(width: 22, height: 22)
-            TextField("Please enter...", text: $draft)
+            TextField("", text: $draft, prompt: Text("Please enter...").foregroundColor(YoohooColor.gray))
                 .font(YoohooFont.medium(12))
-                .foregroundStyle(YoohooColor.gray)
+                .foregroundStyle(YoohooColor.ink)
                 .focused($composing)
+                .submitLabel(.send)
                 .onSubmit(send)
         }
         .padding(.horizontal, 8)
+        .frame(maxWidth: 343)
         .frame(height: 38)
         .background(RoundedRectangle(cornerRadius: 10).fill(.white).overlay(RoundedRectangle(cornerRadius: 10).stroke(YoohooColor.pink, lineWidth: 1)))
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
+        .frame(maxWidth: .infinity)
+        .onAppear { composing = true }
     }
 
     private var giftBanner: some View {
         HStack(spacing: 4) {
-            Image("Gift10").resizable().scaledToFill().frame(width: 60, height: 60)
+            Image(giftAsset).resizable().scaledToFill().frame(width: 60, height: 60)
             Text("Send").font(YoohooFont.title(22)).foregroundStyle(.white)
             Spacer(minLength: 4)
             Text(giftSender).font(YoohooFont.medium(12)).foregroundStyle(.black)
@@ -255,11 +295,21 @@ struct LiveRoomView: View {
         )
     }
 
-    private func playGift(_ name: String) {
-        giftSender = name
+    private var hostFollowed: Bool {
+        session.cards.first { $0.userID == hostID }?.followed ?? false
+    }
+
+    private var hostName: String {
+        session.cards.first { $0.userID == hostID }?.name ?? "Kianu"
+    }
+
+    private func playGift(_ asset: String) {
+        let sender = session.meName.isEmpty ? "Saffira" : session.meName
+        giftAsset = asset
+        giftSender = sender
         Task {
             try? await Task.sleep(nanoseconds: 2_200_000_000)
-            if giftSender == name { giftSender = "" }
+            if giftSender == sender && giftAsset == asset { giftSender = "" }
         }
     }
 
@@ -391,24 +441,26 @@ struct LiveGiftShop: View {
         }
         session.coins -= gift.price
         onClose()
-        onSend(session.meName.isEmpty ? "Saffira" : session.meName)
+        onSend(gift.asset)
     }
 }
 
 private struct AudiencePerson: Identifiable {
     var id: String
+    var userID: String
     var name: String
     var handle: String
     var avatar: String
-    var followed: Bool
 }
 
 struct LiveAudienceSheet: View {
     var onClose: () -> Void
+    @EnvironmentObject private var nav: AppNavigator
+    @EnvironmentObject private var session: YoohooSession
     @State private var people = [
-        AudiencePerson(id: "a1", name: "Kianu", handle: "@ki85d2", avatar: "AvatarKianu", followed: false),
-        AudiencePerson(id: "a2", name: "Maren", handle: "@dks553", avatar: "AvatarMaren", followed: true),
-        AudiencePerson(id: "a3", name: "Kianu", handle: "@ki85d2", avatar: "AvatarKianu", followed: false)
+        AudiencePerson(id: "a1", userID: "kianu", name: "Kianu", handle: "@ki85d2", avatar: "AvatarKianu"),
+        AudiencePerson(id: "a2", userID: "maren", name: "Maren", handle: "@dks553", avatar: "AvatarMaren"),
+        AudiencePerson(id: "a3", userID: "kianu", name: "Kianu", handle: "@ki85d2", avatar: "AvatarKianu")
     ]
 
     var body: some View {
@@ -453,32 +505,38 @@ struct LiveAudienceSheet: View {
     }
 
     private func audienceRow(_ person: AudiencePerson) -> some View {
-        HStack(spacing: 8) {
-            Image(person.avatar)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 40, height: 40)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(YoohooColor.blue, lineWidth: 1))
+        let followed = session.isFollowed(person.userID)
+        return HStack(spacing: 8) {
+            Button {
+                onClose()
+                nav.push(.profile(person.userID))
+            } label: {
+                Image(person.avatar)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 40, height: 40)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(YoohooColor.blue, lineWidth: 1))
+            }
+            .buttonStyle(PressDownStyle())
             VStack(alignment: .leading, spacing: 0) {
                 Text(person.name).font(YoohooFont.heavy(16)).foregroundStyle(YoohooColor.ink)
                 Text(person.handle).font(YoohooFont.medium(12)).foregroundStyle(YoohooColor.ink)
             }
             Spacer()
             Button {
-                guard let index = people.firstIndex(where: { $0.id == person.id }) else { return }
-                people[index].followed.toggle()
+                session.toggleFollow(person.userID)
             } label: {
                 HStack(spacing: 2) {
-                    Text(person.followed ? "Followed" : "Follow")
+                    Text(followed ? "Followed" : "Follow")
                         .font(YoohooFont.heavy(16))
                         .foregroundStyle(.white)
-                    if person.followed == false {
+                    if followed == false {
                         Image("BadgePlus").resizable().scaledToFit().frame(width: 20, height: 20)
                     }
                 }
                 .frame(width: 96, height: 34)
-                .background(RoundedRectangle(cornerRadius: 12).fill(person.followed ? YoohooColor.gray : YoohooColor.blue))
+                .background(RoundedRectangle(cornerRadius: 12).fill(followed ? YoohooColor.gray : YoohooColor.blue))
             }
             .buttonStyle(PressDownStyle())
         }

@@ -160,7 +160,7 @@ struct RootView: View {
                 message: "Are you sure you want to delete your account? This action cannot be undone, and all your data will be permanently erased.",
                 confirm: {
                     nav.sheet = nil
-                    session.signedIn = false
+                    session.eraseAccount()
                     nav.openAuth()
                 },
                 close: { nav.sheet = nil }

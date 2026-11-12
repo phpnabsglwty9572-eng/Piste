@@ -48,6 +48,13 @@ struct ChatListView: View {
     }
 
     private var coinPill: some View {
+        Button { nav.push(.coinShop) } label: {
+            coinLabel
+        }
+        .buttonStyle(PressDownStyle())
+    }
+
+    private var coinLabel: some View {
         HStack(spacing: 2) {
             Image("CoinBadge").resizable().scaledToFit().frame(width: 24, height: 24)
             Text("\(session.coins)")
@@ -117,7 +124,7 @@ struct ChatListView: View {
                     .frame(width: 16, height: 16)
                     .background(Circle().fill(.white))
                     .onTapGesture {
-                        if !person.followed { session.togglePersonFollow(person.id) }
+                        session.togglePersonFollow(person.id)
                     }
             }
             Text(person.name).font(YoohooFont.heavy(16)).foregroundStyle(YoohooColor.ink).lineLimit(1)
@@ -152,7 +159,7 @@ struct ChatListView: View {
         .buttonStyle(PressDownStyle())
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
-                session.deleteThread(person.id)
+                nav.sheet = .deleteChat(person.id)
             } label: {
                 Image("ChatTrash")
             }
@@ -262,7 +269,7 @@ struct ChatThreadView: View {
             .background(RoundedRectangle(cornerRadius: 12).stroke(YoohooColor.pink, lineWidth: 1))
             Button {
                 let person = session.people.first { $0.id == threadID }
-                nav.push(.videoCall(person?.name ?? "Thalassa"))
+                nav.push(.videoCall(person?.name ?? "Chat"))
             } label: {
                 Image("VideoCall").resizable().scaledToFit().frame(width: 26, height: 26)
             }

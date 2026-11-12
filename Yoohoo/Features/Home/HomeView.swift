@@ -164,8 +164,9 @@ struct MainTabBar: View {
         .overlay(alignment: .bottom) {
             Image("TabSnow")
                 .resizable()
-                .scaledToFill()
-                .frame(width: 371, height: 15)
+                .frame(width: 371 * 1.0098, height: 15 * 9.9333)
+                .offset(x: 371 * -0.0008, y: 15 * -3.0667)
+                .frame(width: 371, height: 15, alignment: .topLeading)
                 .clipped()
         }
         .background(tabShape.fill(YoohooColor.ice).overlay(tabShape.stroke(YoohooColor.blue, lineWidth: 2)))
@@ -250,10 +251,13 @@ struct HomeCard: View {
                 Spacer()
                 HStack(spacing: 8) {
                     authorChip
-                    Image(card.followed ? "FollowedGlyph" : "FollowGlyph")
-                        .resizable()
-                        .frame(width: 34, height: 34)
-                        .modifier(SoftFloat(amount: 2))
+                    Button { session.toggleFollow(card.userID) } label: {
+                        Image(card.followed ? "FollowedGlyph" : "FollowGlyph")
+                            .resizable()
+                            .frame(width: 34, height: 34)
+                    }
+                    .buttonStyle(PressDownStyle())
+                    .modifier(SoftFloat(amount: 2))
                     Image("MoreGlyph")
                         .resizable()
                         .frame(width: 34, height: 34)
@@ -295,7 +299,8 @@ struct HomeCard: View {
 
     private var face: some View {
         let crop = avatarCrop
-        return Image(card.avatar)
+        return Button { nav.push(.profile(card.userID)) } label: {
+            Image(card.avatar)
             .resizable()
             .frame(width: 33 * crop.width, height: 33 * crop.height)
             .offset(x: 33 * crop.left, y: 33 * crop.top)
@@ -303,6 +308,8 @@ struct HomeCard: View {
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white, lineWidth: 1))
+        }
+        .buttonStyle(PressDownStyle())
     }
 
     private var avatarCrop: (width: CGFloat, height: CGFloat, left: CGFloat, top: CGFloat) {

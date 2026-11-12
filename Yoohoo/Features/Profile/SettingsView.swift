@@ -70,14 +70,7 @@ struct SettingsView: View {
 
 struct PeopleListView: View {
     var kind: String
-    @State private var followed: Set<String>
-    @State private var hidden: Set<String> = []
-
-    init(kind: String) {
-        self.kind = kind
-        let starting: Set<String> = kind == "Followed" ? ["maren", "saffira-list", "veyra", "kaelin"] : []
-        _followed = State(initialValue: starting)
-    }
+    @EnvironmentObject private var session: YoohooSession
 
     private var rows: [(id: String, name: String, handle: String, avatar: String)] {
         switch kind {
@@ -89,26 +82,35 @@ struct PeopleListView: View {
                 ("veyra", "Veyra", "@seje8de", "AvatarIsolde")
             ]
         case "Blacklist":
-            return [("kaelin", "Kaelin", "@didjd55", "AvatarKaelin")]
+            return session.blocked.map { id in
+                if let known = YoohooSession.profile(id) {
+                    return (id, known.name, known.handle, known.avatar)
+                }
+                return (id, id, "", "AvatarSaffira")
+            }
         default:
-            return [
+            let base: [(id: String, name: String, handle: String, avatar: String)] = [
                 ("maren", "Maren", "@dks553", "AvatarMaren"),
                 ("saffira-list", "Saffira", "@de5s8d", "AvatarSaffiraList"),
                 ("veyra", "Veyra", "@seje8de", "AvatarIsolde"),
                 ("kaelin", "Kaelin", "@didjd55", "AvatarKaelin")
             ]
+            let extras = session.extraFollowed.compactMap { id -> (id: String, name: String, handle: String, avatar: String)? in
+                guard let known = YoohooSession.profile(id) else { return nil }
+                return (id, known.name, known.handle, known.avatar)
+            }
+            return base + extras
         }
     }
 
     var body: some View {
         SnowForm(title: kind == "Followed" ? "Followed" : kind) {
             ScrollView {
-                let visible = rows.filter { !hidden.contains($0.id) }
-                if visible.isEmpty {
+                if rows.isEmpty {
                     EmptyPenguin(message: "No more data").frame(height: 280)
                 } else {
                     VStack(spacing: 16) {
-                        ForEach(visible, id: \.id) { person in
+                        ForEach(rows, id: \.id) { person in
                             personRow(person)
                         }
                     }
@@ -144,11 +146,11 @@ struct PeopleListView: View {
     @ViewBuilder
     private func action(_ id: String) -> some View {
         if kind == "Blacklist" {
-            chip("Remove", filled: false) { hidden.insert(id) }
-        } else if followed.contains(id) {
-            chip("Followed", filled: false) { followed.remove(id) }
+            chip("Remove", filled: false) { session.unblock(id) }
+        } else if session.isFollowed(id) {
+            chip("Followed", filled: false) { session.toggleFollow(id) }
         } else {
-            Button { followed.insert(id) } label: {
+            Button { session.toggleFollow(id) } label: {
                 HStack(spacing: 2) {
                     Text("Follow")
                         .font(YoohooFont.heavy(16))
