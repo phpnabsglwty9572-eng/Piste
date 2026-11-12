@@ -694,37 +694,65 @@ struct AboutSheet: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            SnowSheetHeader(title: "About") { nav.sheet = nil }
+        VStack(spacing: 0) {
+            Color.clear.frame(height: 59)
             VStack(spacing: 16) {
-                if isChat {
-                    row("MenuReport", "Report") { nav.sheet = .report }
-                    row("MenuTrash", "Delete Chat") {
-                        if case .chat(let id) = target {
-                            nav.sheet = .deleteChat(id)
-                        }
-                    }
-                } else if mine {
-                    row("MenuTrash", "Delete Post") {
-                        if case .post(let id) = target {
-                            nav.sheet = .deletePost(id, pop: true)
-                        }
-                    }
-                } else {
-                    row("MenuReport", "Report") { nav.sheet = .report }
-                    row("MenuSad", "Add to Blacklist") {
-                        nav.sheet = .block(personID, pop: true)
-                    }
-                }
+                Color.clear.frame(height: 63)
+                rows
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
+            .frame(maxWidth: .infinity)
+            .background(Color.white)
         }
-        .frame(maxWidth: .infinity)
-        .background(
-            Color.white
-                .overlay(Rectangle().stroke(YoohooColor.yellow, lineWidth: 1).padding(.top, 70))
-        )
+        .overlay(alignment: .top) {
+            Image("SnowSheet")
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity)
+                .frame(height: 82)
+                .clipped()
+                .allowsHitTesting(false)
+        }
+        .overlay(alignment: .top) {
+            ZStack {
+                Text("About")
+                    .font(YoohooFont.title(20))
+                    .foregroundStyle(YoohooColor.ink)
+                HStack {
+                    Spacer()
+                    Button { nav.sheet = nil } label: {
+                        Image("CloseBadge").resizable().frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(PressDownStyle())
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 70)
+        }
+    }
+
+    @ViewBuilder
+    private var rows: some View {
+        if isChat {
+            row("MenuReport", "Report") { nav.sheet = .report }
+            row("MenuTrash", "Delete Chat") {
+                if case .chat(let id) = target {
+                    nav.sheet = .deleteChat(id)
+                }
+            }
+        } else if mine {
+            row("MenuTrash", "Delete Post") {
+                if case .post(let id) = target {
+                    nav.sheet = .deletePost(id, pop: true)
+                }
+            }
+        } else {
+            row("MenuReport", "Report") { nav.sheet = .report }
+            row("MenuSad", "Add to Blacklist") {
+                nav.sheet = .block(personID, pop: true)
+            }
+        }
     }
 
     private var personID: String {

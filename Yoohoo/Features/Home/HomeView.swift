@@ -30,7 +30,7 @@ struct HomeView: View {
                     HomeCard(card: card)
                 }
             }
-            .padding(.top, 40)
+            .padding(.top, 16)
             .padding(.bottom, 87)
             .frame(maxWidth: .infinity)
             .background(Color.white)
@@ -95,9 +95,10 @@ struct HomeView: View {
             avatar
                 .offset(x: 16, y: 214)
         }
-        .frame(width: 375, height: 260, alignment: .topLeading)
-        .overlay(alignment: .bottom) {
+        .frame(width: 375, height: 284, alignment: .topLeading)
+        .overlay(alignment: .top) {
             SnowEdge()
+                .padding(.top, 241)
         }
     }
 

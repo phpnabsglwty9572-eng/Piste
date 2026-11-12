@@ -29,19 +29,26 @@ struct LiveRoomView: View {
             Image("LiveStage")
                 .resizable()
                 .scaledToFill()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .clipped()
                 .ignoresSafeArea()
-            VStack(spacing: 8) {
+            VStack(spacing: 0) {
                 topBar
                 hostChip
-                Spacer()
-                ForEach(lines) { line in
-                    lineBubble(line)
+                    .padding(.top, 12)
+                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(lines) { line in
+                        lineBubble(line)
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 48)
                 if composing == false {
                     inputBar
+                        .padding(.bottom, 24)
                 }
             }
-            .padding(.bottom, 12)
             if giftSender.isEmpty == false {
                 giftBanner
                     .padding(.trailing, 0)
@@ -74,101 +81,129 @@ struct LiveRoomView: View {
     }
 
     private var topBar: some View {
-        HStack {
+        HStack(alignment: .center, spacing: 0) {
             HStack(spacing: 3) {
                 Image("LiveGlyph").resizable().frame(width: 20, height: 20)
                 Text("Live").font(YoohooFont.heavy(16)).foregroundStyle(.white)
             }
-            .padding(.horizontal, 8)
-            .frame(height: 28)
+            .padding(.leading, 10)
+            .frame(width: 75, height: 28, alignment: .leading)
             .background(Capsule().fill(Color.black.opacity(0.5)).overlay(Capsule().stroke(YoohooColor.yellow, lineWidth: 1)))
-            Spacer()
+            Spacer(minLength: 0)
             Button { showAudience = true } label: {
-                HStack(spacing: -8) {
-                    ForEach(["LiveFace1", "LiveFace2", "LiveFace3", "LiveFace4", "LiveFace5"], id: \.self) { name in
-                        Image(name).resizable().scaledToFill().frame(width: 28, height: 28).clipShape(Circle()).overlay(Circle().stroke(.white, lineWidth: 0.5))
+                HStack(spacing: 2) {
+                    HStack(spacing: -15) {
+                        ForEach(["LiveFace1", "LiveFace2", "LiveFace3", "LiveFace4", "LiveFace5"], id: \.self) { name in
+                            Image(name)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 28, height: 28)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(.white, lineWidth: 0.5))
+                        }
                     }
                     Text("40+")
                         .font(YoohooFont.heavy(12))
+                        .foregroundStyle(.black)
                         .frame(width: 28, height: 28)
                         .background(Circle().fill(Color.white.opacity(0.6)))
                 }
             }
             .buttonStyle(PressDownStyle())
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.leading, 16)
+        .padding(.trailing, 16)
+        .padding(.top, 16)
     }
 
     private var hostChip: some View {
-        HStack {
-            HStack(spacing: 4) {
-                Image("AvatarKianu")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 33, height: 33)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white, lineWidth: 1))
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Kianu").font(YoohooFont.heavy(16)).foregroundStyle(.white)
-                    Text("@ki85d2").font(YoohooFont.medium(12)).foregroundStyle(.white)
-                }
-                if !followed {
-                    Button { followed = true } label: {
-                        Image("BadgePlus").resizable().scaledToFit().frame(width: 23, height: 23).background(RoundedRectangle(cornerRadius: 8).fill(.white))
-                    }
-                    .buttonStyle(PressDownStyle())
-                }
+        HStack(spacing: 0) {
+            Image("AvatarKianu")
+                .resizable()
+                .frame(width: 33 * 1.0036, height: 33 * 1.5)
+                .offset(x: 33 * -0.0018, y: 33 * -0.1333)
+                .frame(width: 33, height: 33, alignment: .topLeading)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white, lineWidth: 1))
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Kianu")
+                    .font(YoohooFont.heavy(16))
+                    .foregroundStyle(.white)
+                    .frame(height: 18, alignment: .top)
+                Text("@ki85d2")
+                    .font(YoohooFont.medium(12))
+                    .foregroundStyle(.white)
+                    .frame(height: 17, alignment: .top)
             }
-            .padding(4)
-            .background(
-                UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 0, bottomLeading: 0, bottomTrailing: 12, topTrailing: 12))
-                    .fill(Color.black.opacity(0.5))
-                    .overlay(
-                        UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 0, bottomLeading: 0, bottomTrailing: 12, topTrailing: 12))
-                            .stroke(YoohooColor.yellow, lineWidth: 1)
-                    )
-            )
-            Spacer()
+            .padding(.leading, 4)
+            if !followed {
+                Button { followed = true } label: {
+                    Image("BadgePlus")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 23, height: 23)
+                        .frame(width: 25, height: 25)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(.white))
+                }
+                .buttonStyle(PressDownStyle())
+                .padding(.leading, 12)
+            }
         }
+        .padding(.leading, 4)
+        .padding(.trailing, 8)
+        .frame(height: 41, alignment: .leading)
+        .background(
+            UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 0, bottomLeading: 0, bottomTrailing: 12, topTrailing: 12))
+                .fill(Color.black.opacity(0.5))
+                .overlay(
+                    UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 0, bottomLeading: 0, bottomTrailing: 12, topTrailing: 12))
+                        .stroke(YoohooColor.yellow, lineWidth: 1)
+                )
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func lineBubble(_ line: LiveLine) -> some View {
-        HStack {
-            Group {
-                if line.name.isEmpty {
-                    Text(line.text)
-                        .font(YoohooFont.medium(12))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: 244, alignment: .leading)
-                } else {
-                    (Text(line.name).foregroundColor(YoohooColor.yellow) + Text(" " + line.text).foregroundColor(.white))
-                        .font(YoohooFont.medium(12))
-                        .lineLimit(1)
-                }
+        Group {
+            if line.welcome {
+                Text(line.text)
+                    .font(YoohooFont.medium(12))
+                    .foregroundStyle(.white)
+                    .frame(width: 244, alignment: .leading)
+                    .padding(8)
+                    .frame(width: 260, height: 67, alignment: .topLeading)
+            } else {
+                (Text(line.name).foregroundColor(YoohooColor.yellow) + Text(" " + line.text).foregroundColor(.white))
+                    .font(YoohooFont.medium(12))
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .frame(height: 33, alignment: .leading)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, line.welcome ? 8 : 8)
-            .frame(minHeight: line.welcome ? 67 : 33, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color(white: 44 / 255).opacity(0.5)))
-            Spacer(minLength: 40)
         }
-        .padding(.horizontal, 16)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(white: 44 / 255).opacity(0.5)))
     }
 
     private var inputBar: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Image("CommentSend").resizable().frame(width: 22, height: 22)
-                TextField("Please enter...", text: $draft)
-                    .font(YoohooFont.medium(12))
-                    .foregroundStyle(.white)
-                    .onSubmit(send)
+            Button { composing = true } label: {
+                HStack(spacing: 8) {
+                    Image("CommentSend").resizable().frame(width: 22, height: 22)
+                    Text(draft.isEmpty ? "Please enter..." : draft)
+                        .font(YoohooFont.medium(12))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 8)
+                .frame(width: 205, height: 38, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(white: 44 / 255).opacity(0.5))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(YoohooColor.pink, lineWidth: 1))
+                )
             }
-            .padding(.horizontal, 8)
-            .frame(height: 38)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color(white: 44 / 255).opacity(0.5)).overlay(RoundedRectangle(cornerRadius: 12).stroke(YoohooColor.pink, lineWidth: 1)))
-            .onTapGesture { composing = true }
+            .buttonStyle(PressDownStyle())
             Button { showGifts = true } label: {
                 Image("LiveGift").resizable().scaledToFit().frame(width: 26, height: 26)
             }
@@ -265,55 +300,60 @@ struct LiveGiftShop: View {
     ]
 
     var body: some View {
-        VStack(spacing: 16) {
-            HStack {
-                HStack(spacing: 2) {
-                    Image("CoinBadge").resizable().scaledToFit().frame(width: 24, height: 24)
-                    Text("\(session.coins)")
-                        .font(YoohooFont.heavy(14))
-                        .foregroundStyle(YoohooColor.ink)
-                    Button { nav.push(.coinShop) } label: {
-                        Image("CoinPlus").resizable().frame(width: 24, height: 24)
+        VStack(spacing: 0) {
+            Color.clear.frame(height: 59)
+            VStack(spacing: 16) {
+                Color.clear.frame(height: 63)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 4), spacing: 16) {
+                    ForEach(gifts.indices, id: \.self) { index in
+                        giftCard(index)
                     }
-                    .buttonStyle(PressDownStyle())
                 }
-                .padding(.horizontal, 2)
-                .frame(height: 28)
-                .background(RoundedRectangle(cornerRadius: 8).fill(.white).overlay(RoundedRectangle(cornerRadius: 8).stroke(YoohooColor.blue, lineWidth: 1)))
-                Spacer()
-                Text("Gift Shop")
-                    .font(YoohooFont.title(20))
-                    .foregroundStyle(YoohooColor.ink)
-                Spacer()
-                Button(action: onClose) {
-                    Image("CloseBadge").resizable().frame(width: 28, height: 28)
-                }
-                .buttonStyle(PressDownStyle())
+                SnowButton(title: "Send", enabled: true, action: send)
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 4), spacing: 16) {
-                ForEach(gifts.indices, id: \.self) { index in
-                    giftCard(index)
-                }
-            }
-            SnowButton(title: "Send", enabled: true, action: send)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity)
+            .background(Color.white)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 72)
-        .padding(.bottom, 8)
-        .background(Color.white)
         .overlay(alignment: .top) {
             Image("SnowSheet")
                 .resizable()
                 .scaledToFill()
+                .frame(maxWidth: .infinity)
                 .frame(height: 82)
                 .clipped()
                 .allowsHitTesting(false)
         }
-        .overlay(
-            Rectangle()
-                .stroke(YoohooColor.yellow, lineWidth: 1)
-                .allowsHitTesting(false)
-        )
+        .overlay(alignment: .top) {
+            ZStack {
+                Text("Gift Shop")
+                    .font(YoohooFont.title(20))
+                    .foregroundStyle(YoohooColor.ink)
+                HStack {
+                    HStack(spacing: 2) {
+                        Image("CoinBadge").resizable().scaledToFit().frame(width: 24, height: 24)
+                        Text("\(session.coins)")
+                            .font(YoohooFont.heavy(14))
+                            .foregroundStyle(YoohooColor.ink)
+                        Button { nav.push(.coinShop) } label: {
+                            Image("CoinPlus").resizable().frame(width: 24, height: 24)
+                        }
+                        .buttonStyle(PressDownStyle())
+                    }
+                    .padding(.horizontal, 2)
+                    .frame(height: 28)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(.white).overlay(RoundedRectangle(cornerRadius: 8).stroke(YoohooColor.blue, lineWidth: 1)))
+                    Spacer()
+                    Button(action: onClose) {
+                        Image("CloseBadge").resizable().frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(PressDownStyle())
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 70)
+        }
     }
 
     private func giftCard(_ index: Int) -> some View {
@@ -372,7 +412,29 @@ struct LiveAudienceSheet: View {
     ]
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: 59)
+            VStack(spacing: 16) {
+                Color.clear.frame(height: 63)
+                ForEach(people) { person in
+                    audienceRow(person)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity)
+            .background(Color.white)
+        }
+        .overlay(alignment: .top) {
+            Image("SnowSheet")
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity)
+                .frame(height: 82)
+                .clipped()
+                .allowsHitTesting(false)
+        }
+        .overlay(alignment: .top) {
             ZStack {
                 Text("Audience List")
                     .font(YoohooFont.title(20))
@@ -385,23 +447,9 @@ struct LiveAudienceSheet: View {
                     .buttonStyle(PressDownStyle())
                 }
             }
-            ForEach(people) { person in
-                audienceRow(person)
-            }
+            .padding(.horizontal, 16)
+            .padding(.top, 70)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 70)
-        .padding(.bottom, 24)
-        .background(Color.white)
-        .overlay(alignment: .top) {
-            Image("SnowSheet")
-                .resizable()
-                .scaledToFill()
-                .frame(height: 82)
-                .clipped()
-                .allowsHitTesting(false)
-        }
-        .overlay(Rectangle().stroke(YoohooColor.yellow, lineWidth: 1).allowsHitTesting(false))
     }
 
     private func audienceRow(_ person: AudiencePerson) -> some View {

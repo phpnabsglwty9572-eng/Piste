@@ -120,9 +120,9 @@ struct SnowEdge: View {
     var body: some View {
         Image("SnowEdge")
             .resizable()
-            .scaledToFill()
-            .frame(width: 375, height: 72, alignment: .bottom)
-            .frame(width: 375, height: 19, alignment: .bottom)
+            .frame(width: 375 * 1.1132, height: 19 * 11.1111)
+            .offset(x: 375 * -0.0445, y: 19 * -4.5185)
+            .frame(width: 375, height: 19, alignment: .topLeading)
             .clipped()
     }
 }
