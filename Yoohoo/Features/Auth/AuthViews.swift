@@ -5,15 +5,16 @@ struct SplashView: View {
     @EnvironmentObject private var nav: AppNavigator
 
     var body: some View {
-        DesignBoard(height: 667) {
-            ZStack(alignment: .topLeading) {
-                AuthBackdrop()
-                AppMark(side: 65)
-                    .offset(x: 155, y: 244)
+        GeometryReader { geo in
+            ZStack {
+                AuthSkyFill()
+                AuthLogoMark()
+                    .position(x: geo.size.width / 2, y: 276.5)
             }
-            .frame(width: 375, height: 667, alignment: .topLeading)
-            .clipped()
+            .frame(width: geo.size.width, height: geo.size.height)
         }
+        .ignoresSafeArea()
+        .navigationBarHidden(true)
         .onAppear {
             Task {
                 try? await Task.sleep(nanoseconds: 1_100_000_000)
@@ -28,33 +29,38 @@ struct AuthLandingView: View {
     @EnvironmentObject private var session: YoohooSession
 
     var body: some View {
-        DesignBoard(height: 667) {
-            ZStack(alignment: .topLeading) {
-                AuthBackdrop()
-                AppMark(side: 65)
-                    .offset(x: 155, y: 120)
-                appleButton
-                    .offset(x: 35, y: 254)
-                outlineButton("Create Account") { gate { nav.push(.register) } }
-                    .offset(x: 35, y: 331)
-                outlineButton("Sign In") { gate { nav.push(.signIn) } }
-                    .offset(x: 35, y: 391)
-                legalLine
-                    .offset(x: 34, y: 508)
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                AuthSkyFill()
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: 120)
+                    AuthLogoMark()
+                    Color.clear.frame(height: 69)
+                    appleButton
+                    Color.clear.frame(height: 13)
+                    outlineButton("Create Account") { gate { nav.push(.register) } }
+                    Color.clear.frame(height: 16)
+                    outlineButton("Sign In") { gate { nav.push(.signIn) } }
+                    Color.clear.frame(height: 73)
+                    legalLine
+                }
+                .frame(width: geo.size.width)
             }
-            .frame(width: 375, height: 667, alignment: .topLeading)
-            .clipped()
+            .frame(width: geo.size.width, height: geo.size.height)
         }
+        .ignoresSafeArea()
+        .background(NavigationGestureRelay())
+        .navigationBarHidden(true)
     }
 
     private var appleButton: some View {
         Button {
             gate { Task { await apple() } }
         } label: {
-            ZStack(alignment: .top) {
+            ZStack {
                 Image("ButtonBlue")
                     .resizable()
-                    .frame(width: 305, height: 64)
+                    .frame(width: 306, height: 64)
                 HStack(spacing: 10) {
                     Image("AppleGlyph")
                         .resizable()
@@ -64,11 +70,11 @@ struct AuthLandingView: View {
                         .foregroundStyle(.white)
                         .lineLimit(1)
                 }
-                .offset(y: 24)
+                .offset(y: 6)
             }
-            .frame(width: 305, height: 64, alignment: .top)
+            .frame(width: 306, height: 64)
         }
-        .buttonStyle(PressDownStyle())
+        .buttonStyle(.plain)
     }
 
     private func outlineButton(_ title: String, action: @escaping () -> Void) -> some View {
@@ -80,7 +86,7 @@ struct AuthLandingView: View {
                 .background(Capsule().fill(.white))
                 .overlay(Capsule().stroke(YoohooColor.pink, lineWidth: 2))
         }
-        .buttonStyle(PressDownStyle())
+        .buttonStyle(.plain)
     }
 
     private var legalLine: some View {
@@ -94,8 +100,9 @@ struct AuthLandingView: View {
         .font(YoohooFont.medium(10))
         .foregroundStyle(YoohooColor.ink)
         .buttonStyle(.plain)
+        .tint(YoohooColor.ink)
         .lineLimit(1)
-        .fixedSize()
+        .frame(maxWidth: .infinity)
     }
 
     private func gate(_ work: @escaping () -> Void) {
@@ -149,24 +156,19 @@ struct AccountFormView: View {
     }
 
     var body: some View {
-        DesignBoard(height: 667) {
-            ZStack(alignment: .topLeading) {
-                AuthChrome(title: mode == .signIn ? "Sign In" : "Create Account")
+        AuthFormPage(
+            title: mode == .signIn ? "Sign In" : "Create Account",
+            buttonTitle: mode == .signIn ? "Sign In" : "Next",
+            ready: ready,
+            action: submit
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
                 field(title: "Email", text: $email, prompt: "Your Email", secure: false)
-                    .offset(x: 16, y: 134)
                 field(title: "Password", text: $password, prompt: "Your Password", secure: true)
-                    .offset(x: 16, y: 218)
                 if mode == .register {
                     field(title: "Name", text: $name, prompt: "Your name", secure: false)
-                        .offset(x: 16, y: 302)
                 }
-                SnowButton(title: mode == .signIn ? "Sign In" : "Next", enabled: true) {
-                    submit()
-                }
-                .offset(x: 35, y: 582)
             }
-            .frame(width: 375, height: 667, alignment: .topLeading)
-            .clipped()
         }
     }
 
@@ -244,18 +246,11 @@ struct RegisterPhotosView: View {
     private var ready: Bool { avatar != nil && background != nil }
 
     var body: some View {
-        DesignBoard(height: 667) {
-            ZStack(alignment: .topLeading) {
-                AuthChrome(title: "Create Account")
+        AuthFormPage(title: "Create Account", buttonTitle: "Create", ready: ready, action: create) {
+            VStack(alignment: .leading, spacing: 16) {
                 photoBlock(title: "Avatar", image: avatar, circle: true, item: $avatarItem)
-                    .offset(x: 16, y: 134)
                 photoBlock(title: "Background", image: background, circle: false, item: $backgroundItem)
-                    .offset(x: 16, y: 293)
-                SnowButton(title: "Create", enabled: true) { create() }
-                    .offset(x: 35, y: 582)
             }
-            .frame(width: 375, height: 667, alignment: .topLeading)
-            .clipped()
         }
         .onChange(of: avatarItem) { item in
             load(item) { avatar = $0 }
@@ -302,7 +297,10 @@ struct RegisterPhotosView: View {
     }
 
     private func photoShape(circle: Bool) -> AnyShape {
-        AnyShape(RoundedRectangle(cornerRadius: circle ? 55.5 : 10, style: .continuous))
+        if circle {
+            return AnyShape(Circle())
+        }
+        return AnyShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func load(_ item: PhotosPickerItem?, assign: @escaping (UIImage?) -> Void) {
@@ -330,51 +328,105 @@ struct RegisterPhotosView: View {
     }
 }
 
-struct AuthBackdrop: View {
+struct AuthSkyFill: View {
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            Image("SnowSky")
-                .resizable()
-                .frame(width: 375 * 1.0004, height: 668 * 1.2171, alignment: .topLeading)
-                .offset(x: 375 * -0.0002, y: 668 * -0.0599)
-            GogglePile()
-                .offset(y: 487)
-        }
-        .frame(width: 375, height: 667, alignment: .topLeading)
-        .clipped()
+        Image("AuthSky")
+            .resizable()
+            .scaledToFill()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
     }
 }
 
-struct AuthChrome: View {
+struct AuthLogoMark: View {
+    var body: some View {
+        Image("AuthLogo")
+            .resizable()
+            .frame(width: 65, height: 65)
+            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(Color.black, lineWidth: 1)
+            )
+    }
+}
+
+private struct AuthSnowEdge: View {
+    var width: CGFloat
+
+    var body: some View {
+        let imageWidth = width * 1.1132
+        let imageHeight: CGFloat = 19 * 11.1111
+        Color.clear
+            .frame(width: width, height: 19)
+            .overlay(alignment: .topLeading) {
+                Image("AuthSnow")
+                    .resizable()
+                    .frame(width: imageWidth, height: imageHeight, alignment: .topLeading)
+                    .offset(x: width * -0.0445, y: 19 * -4.5185)
+            }
+            .clipped()
+    }
+}
+
+struct AuthFormPage<Fields: View>: View {
     var title: String
+    var buttonTitle: String
+    var ready: Bool
+    var action: () -> Void
+    @ViewBuilder var fields: () -> Fields
+
     @EnvironmentObject private var nav: AppNavigator
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            HeaderSky(height: 177)
-            Color.white
-                .frame(width: 375, height: 549)
-                .offset(y: 118)
-            SnowEdge()
-                .offset(y: 99)
-            Image("HeaderSled")
-                .resizable()
-                .frame(width: 32, height: 32)
-                .offset(x: 327, y: 86)
-            Button(action: nav.pop) {
-                Image("BackButton")
+        GeometryReader { geo in
+            let top = geo.safeAreaInsets.top
+            let width = geo.size.width
+            ZStack(alignment: .topLeading) {
+                Color.white.ignoresSafeArea()
+                formSky(width: width, height: top + 157)
+                    .ignoresSafeArea(edges: .top)
+                    .offset(y: -top)
+                AuthSnowEdge(width: width)
+                    .offset(y: 79)
+                Image("AuthSled")
                     .resizable()
-                    .frame(width: 34, height: 34)
+                    .frame(width: 32, height: 32)
+                    .offset(x: width - 48, y: 66)
+                Button(action: nav.pop) {
+                    Image("BackButton")
+                        .resizable()
+                        .frame(width: 34, height: 34)
+                }
+                .buttonStyle(.plain)
+                .offset(x: 16, y: 16)
+                Text(title)
+                    .font(YoohooFont.title(20))
+                    .foregroundStyle(YoohooColor.ink)
+                    .lineLimit(1)
+                    .offset(x: 58, y: 19)
+                fields()
+                    .padding(.leading, 16)
+                    .offset(y: 114)
             }
-            .buttonStyle(PressDownStyle())
-            .offset(x: 16, y: 36)
-            Text(title)
-                .font(YoohooFont.title(20))
-                .foregroundStyle(YoohooColor.ink)
-                .lineLimit(1)
-                .offset(x: 58, y: 39)
+            .frame(width: width, height: geo.size.height)
         }
-        .frame(width: 375, height: 667, alignment: .topLeading)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            SnowButton(title: buttonTitle, enabled: ready, action: action)
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 21)
+                .background(Color.white)
+        }
+        .background(NavigationGestureRelay())
+        .navigationBarHidden(true)
+    }
+
+    private func formSky(width: CGFloat, height: CGFloat) -> some View {
+        Image("FormSky")
+            .resizable()
+            .frame(width: width, height: width * 2543 / 658, alignment: .top)
+            .frame(width: width, height: height, alignment: .top)
+            .clipped()
     }
 }
 

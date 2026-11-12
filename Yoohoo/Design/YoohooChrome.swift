@@ -159,14 +159,14 @@ struct SnowButton: View {
             ZStack {
                 Image(enabled ? "ButtonBlue" : "ButtonGray")
                     .resizable()
-                    .frame(width: 305, height: 64)
+                    .frame(width: 306, height: 64)
                 Text(title)
                     .font(YoohooFont.title(22))
                     .foregroundStyle(.white)
                     .lineLimit(1)
-                    .offset(y: 4)
+                    .offset(y: 6)
             }
-            .frame(width: 305, height: 64)
+            .frame(width: 306, height: 64)
         }
         .buttonStyle(PressDownStyle())
         .disabled(!enabled)
