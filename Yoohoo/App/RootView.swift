@@ -58,7 +58,11 @@ struct RootView: View {
                     AuthLandingView()
                 }
             }
-            .animation(.easeInOut(duration: 0.25), value: nav.tab)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if nav.stage == .main {
+                    MainTabBar()
+                }
+            }
             .navigationDestination(for: AppPage.self) { page($0) }
         }
     }

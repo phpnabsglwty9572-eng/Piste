@@ -37,39 +37,46 @@ struct ProfileView: View {
     }
 
     private var cover: some View {
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: .top) {
             coverImage
-                .frame(height: 300)
                 .frame(maxWidth: .infinity)
+                .frame(height: 300)
                 .clipped()
-            SnowEdge()
+                .allowsHitTesting(false)
             VStack {
-                HStack {
-                    Button(action: nav.pop) {
-                        Image("BackButton").resizable().frame(width: 34, height: 34)
+                Spacer(minLength: 0)
+                SnowEdge()
+            }
+            .frame(height: 300)
+            .allowsHitTesting(false)
+            HStack {
+                Button(action: nav.pop) {
+                    Image("BackButton").resizable().frame(width: 34, height: 34)
+                }
+                .buttonStyle(PressDownStyle())
+                Spacer()
+                if mine {
+                    Button { nav.push(.settings) } label: {
+                        Image("SettingsIcon").resizable().frame(width: 34, height: 34)
                     }
                     .buttonStyle(PressDownStyle())
-                    Spacer()
-                    if mine {
-                        Button { nav.push(.settings) } label: {
-                            Image("SettingsIcon").resizable().frame(width: 34, height: 34)
-                        }
-                        .buttonStyle(PressDownStyle())
-                    } else {
-                        Button { nav.sheet = .about(.person(userID)) } label: {
-                            Image("MoreDots").resizable().frame(width: 34, height: 34)
-                        }
-                        .buttonStyle(PressDownStyle())
+                } else {
+                    Button { nav.sheet = .about(.person(userID)) } label: {
+                        Image("MoreDots").resizable().frame(width: 34, height: 34)
                     }
+                    .buttonStyle(PressDownStyle())
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                Spacer()
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .frame(maxWidth: .infinity)
+            .zIndex(2)
             avatar
-                .offset(y: 36)
+                .padding(.top, 214)
+                .zIndex(3)
         }
-        .frame(height: 300)
+        .frame(maxWidth: .infinity)
+        .frame(height: 300, alignment: .top)
     }
 
     private var coverImage: some View {
@@ -110,9 +117,12 @@ struct ProfileView: View {
                     Image("EditBadge").resizable().frame(width: 24, height: 24)
                 }
                 .buttonStyle(PressDownStyle())
-            } else if session.isFollowed(userID) == false {
+            } else {
                 Button { session.toggleFollow(userID) } label: {
-                    Image("BadgePlus").resizable().scaledToFit().frame(width: 22, height: 22)
+                    Image(session.isFollowed(userID) ? "FollowedGlyph" : "BadgePlus")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 22, height: 22)
                         .background(Circle().fill(.white).overlay(Circle().stroke(YoohooColor.pink, lineWidth: 1)))
                 }
                 .buttonStyle(PressDownStyle())
@@ -185,7 +195,7 @@ struct ProfileView: View {
                 .buttonStyle(PressDownStyle())
             }
         }
-        .padding(.top, 28)
+        .padding(.top, 8)
         .padding(.trailing, mine ? 0 : 16)
     }
 

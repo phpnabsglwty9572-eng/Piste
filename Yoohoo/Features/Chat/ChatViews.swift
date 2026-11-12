@@ -15,7 +15,6 @@ struct ChatListView: View {
                 header
                 sheet
             }
-            MainTabBar()
         }
         .background(NavigationGestureRelay())
         .navigationBarHidden(true)
@@ -85,7 +84,7 @@ struct ChatListView: View {
                             threadRow(person)
                         }
                     }
-                    .padding(.bottom, 110)
+                    .padding(.bottom, 24)
                 }
             }
         }

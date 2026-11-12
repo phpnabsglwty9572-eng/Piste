@@ -24,7 +24,6 @@ struct PostFeedView: View {
                 filterRow
                 sheet
             }
-            MainTabBar()
         }
         .background(NavigationGestureRelay())
         .navigationBarHidden(true)
@@ -92,7 +91,7 @@ struct PostFeedView: View {
                         }
                     }
                     .padding(.top, 16)
-                    .padding(.bottom, 110)
+                    .padding(.bottom, 24)
                 }
             }
         }

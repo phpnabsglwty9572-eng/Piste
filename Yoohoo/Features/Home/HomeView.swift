@@ -5,7 +5,7 @@ struct HomeView: View {
     @EnvironmentObject private var session: YoohooSession
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: .top) {
             Color.white.ignoresSafeArea()
             GeometryReader { geo in
                 let scale = geo.size.width / 375
@@ -16,7 +16,6 @@ struct HomeView: View {
                         .frame(width: geo.size.width, alignment: .top)
                 }
             }
-            tabBar
         }
         .background(NavigationGestureRelay())
         .navigationBarHidden(true)
@@ -34,7 +33,7 @@ struct HomeView: View {
                 }
             }
             .padding(.top, 16)
-            .padding(.bottom, 87)
+            .padding(.bottom, 24)
             .frame(maxWidth: .infinity)
             .background(Color.white)
         }
@@ -48,13 +47,15 @@ struct HomeView: View {
                 .offset(y: -260 * 0.2769)
                 .frame(width: 375, height: 260, alignment: .topLeading)
                 .clipped()
+                .allowsHitTesting(false)
             Image("SnowCap")
                 .resizable()
                 .scaledToFill()
                 .frame(width: 375, height: 83)
                 .clipped()
-            Image("FlakeA").resizable().frame(width: 25, height: 25).offset(x: 50, y: 194)
-            Image("FlakeB").resizable().frame(width: 25, height: 25).offset(x: 233, y: 167)
+                .allowsHitTesting(false)
+            Image("FlakeA").resizable().frame(width: 25, height: 25).offset(x: 50, y: 194).allowsHitTesting(false)
+            Image("FlakeB").resizable().frame(width: 25, height: 25).offset(x: 233, y: 167).allowsHitTesting(false)
             Image("FlakeA")
                 .resizable()
                 .scaledToFill()
@@ -64,6 +65,10 @@ struct HomeView: View {
                 .clipped()
                 .scaleEffect(x: -1, y: -1)
                 .offset(x: 356, y: 61)
+                .allowsHitTesting(false)
+            SnowEdge()
+                .padding(.top, 241)
+                .allowsHitTesting(false)
             VStack(alignment: .leading, spacing: 12) {
                 Button(action: { nav.push(.ai) }) {
                     Text("Glide into winter with Pegu")
@@ -97,12 +102,17 @@ struct HomeView: View {
             .offset(x: 209, y: 144)
             avatar
                 .offset(x: 16, y: 214)
+                .zIndex(2)
+            Button { nav.push(.settings) } label: {
+                Image("SettingsIcon")
+                    .resizable()
+                    .frame(width: 34, height: 34)
+            }
+            .buttonStyle(PressDownStyle())
+            .offset(x: 325, y: 16)
+            .zIndex(2)
         }
         .frame(width: 375, height: 284, alignment: .topLeading)
-        .overlay(alignment: .top) {
-            SnowEdge()
-                .padding(.top, 241)
-        }
     }
 
     private var avatar: some View {
@@ -147,9 +157,6 @@ struct HomeView: View {
         }
     }
 
-    private var tabBar: some View {
-        MainTabBar()
-    }
 }
 
 struct MainTabBar: View {
@@ -173,9 +180,10 @@ struct MainTabBar: View {
                 .offset(x: 371 * -0.0008, y: 15 * -3.0667)
                 .frame(width: 371, height: 15, alignment: .topLeading)
                 .clipped()
+                .allowsHitTesting(false)
         }
         .background(tabShape.fill(YoohooColor.ice).overlay(tabShape.stroke(YoohooColor.blue, lineWidth: 2)))
-        .ignoresSafeArea(edges: .bottom)
+        .contentShape(Rectangle())
     }
 
     private var tabShape: UnevenRoundedRectangle {
@@ -201,6 +209,7 @@ struct MainTabBar: View {
                     .foregroundStyle(selected ? YoohooColor.ink : YoohooColor.gray)
             }
             .frame(width: 111, height: 51)
+            .contentShape(Rectangle())
         }
         .buttonStyle(PressDownStyle())
     }
