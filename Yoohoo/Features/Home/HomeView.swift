@@ -31,7 +31,7 @@ struct HomeView: View {
                 }
             }
             .padding(.top, 40)
-            .padding(.bottom, 96)
+            .padding(.bottom, 87)
             .frame(maxWidth: .infinity)
             .background(Color.white)
         }
@@ -61,29 +61,28 @@ struct HomeView: View {
                 .clipped()
                 .scaleEffect(x: -1, y: -1)
                 .offset(x: 356, y: 61)
-            Button {
-                nav.push(.ai)
-            } label: {
-                ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 12) {
+                Button(action: { nav.push(.ai) }) {
                     Text("Glide into winter with Pegu")
                         .font(YoohooFont.display(20))
                         .foregroundStyle(.white)
+                        .shadow(color: Color(red: 191 / 255, green: 222 / 255, blue: 240 / 255), radius: 2, y: -3)
                         .shadow(color: YoohooColor.titleShadow, radius: 0, y: 3)
                         .lineLimit(1)
-                        .offset(y: 80)
+                }
+                .buttonStyle(PressDownStyle())
+                Button(action: { nav.push(.ai) }) {
                     Text("Fresh snow, cool goggles and endless fun. Let this tiny skier bring warmth and joy to your snowy days.")
                         .font(YoohooFont.body(14))
                         .foregroundStyle(.white)
+                        .multilineTextAlignment(.leading)
                         .frame(width: 253, alignment: .leading)
-                        .offset(y: 118)
                 }
-                .frame(width: 253, height: 190, alignment: .topLeading)
+                .buttonStyle(PressDownStyle())
             }
-            .buttonStyle(PressDownStyle())
-            .offset(x: 16, y: 0)
-            Button {
-                nav.push(.ai)
-            } label: {
+            .padding(.top, 80)
+            .padding(.leading, 16)
+            Button(action: { nav.push(.ai) }) {
                 Image("Penguin")
                     .resizable()
                     .frame(width: 150 * 1.0949, height: 140 * 1.1731)
@@ -97,8 +96,8 @@ struct HomeView: View {
                 .offset(x: 16, y: 214)
         }
         .frame(width: 375, height: 260, alignment: .topLeading)
-        .overlay(alignment: .top) {
-            SnowEdge().offset(y: 241)
+        .overlay(alignment: .bottom) {
+            SnowEdge()
         }
     }
 
@@ -108,9 +107,11 @@ struct HomeView: View {
         } label: {
             ZStack(alignment: .topLeading) {
                 homeFace
-                    .frame(width: 50, height: 50)
+                    .frame(width: 50, height: 50, alignment: .topLeading)
+                    .clipped()
                     .clipShape(Circle())
-                    .offset(x: 10, y: 10)
+                    .padding(.leading, 10)
+                    .padding(.top, 10)
                 Image("AvatarFrame")
                     .resizable()
                     .scaledToFill()
@@ -119,7 +120,8 @@ struct HomeView: View {
                 Image("EditBadge")
                     .resizable()
                     .frame(width: 24, height: 24)
-                    .offset(x: 46, y: 46)
+                    .padding(.leading, 46)
+                    .padding(.top, 46)
             }
             .frame(width: 70, height: 70, alignment: .topLeading)
         }
@@ -149,19 +151,21 @@ struct MainTabBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
+            HStack(spacing: 5) {
                 item(.home, on: "TabHome", off: "TabHomeOff", title: "home")
                 item(.post, on: "TabPostOn", off: "TabPost", title: "post")
                 item(.chat, on: "TabChatOn", off: "TabChat", title: "chat")
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
+        }
+        .frame(height: 71, alignment: .top)
+        .overlay(alignment: .bottom) {
             Image("TabSnow")
                 .resizable()
                 .scaledToFill()
-                .frame(height: 15)
+                .frame(width: 371, height: 15)
                 .clipped()
-                .padding(.bottom, 2)
         }
         .background(tabShape.fill(YoohooColor.ice).overlay(tabShape.stroke(YoohooColor.blue, lineWidth: 2)))
         .ignoresSafeArea(edges: .bottom)
@@ -189,8 +193,7 @@ struct MainTabBar: View {
                     .font(YoohooFont.heavy(10))
                     .foregroundStyle(selected ? YoohooColor.ink : YoohooColor.gray)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 51)
+            .frame(width: 111, height: 51)
         }
         .buttonStyle(PressDownStyle())
     }
@@ -280,8 +283,8 @@ struct HomeCard: View {
                 .font(YoohooFont.heavy(16))
                 .foregroundStyle(.white)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 28)
+        .padding(.leading, 10)
+        .frame(width: 75, height: 28, alignment: .leading)
         .background(
             Capsule()
                 .fill(Color.black.opacity(0.5))
@@ -289,32 +292,51 @@ struct HomeCard: View {
         )
     }
 
+    private var face: some View {
+        let crop = avatarCrop
+        return Image(card.avatar)
+            .resizable()
+            .frame(width: 33 * crop.width, height: 33 * crop.height)
+            .offset(x: 33 * crop.left, y: 33 * crop.top)
+            .frame(width: 33, height: 33, alignment: .topLeading)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white, lineWidth: 1))
+    }
+
+    private var avatarCrop: (width: CGFloat, height: CGFloat, left: CGFloat, top: CGFloat) {
+        if card.id == "elowen" {
+            return (1, 1.227, 0, -0.2195)
+        }
+        return (1.0036, 1.5, -0.0018, -0.1333)
+    }
+
     private var authorChip: some View {
-        HStack(spacing: 4) {
-            Image(card.avatar)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 33, height: 33)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white, lineWidth: 1))
+        HStack(spacing: 0) {
+            face
             VStack(alignment: .leading, spacing: 0) {
                 Text(card.name)
                     .font(YoohooFont.heavy(16))
                     .foregroundStyle(.white)
+                    .frame(height: 18, alignment: .top)
                 Text(card.handle)
                     .font(YoohooFont.medium(12))
                     .foregroundStyle(.white)
+                    .frame(height: 17, alignment: .top)
             }
-            if !card.followed {
-                Image("BadgePlus")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 23, height: 23)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(.white))
-                    .onTapGesture { session.toggleFollow(card.id) }
-            }
+            .padding(.leading, 4)
+            Image("BadgePlus")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 23, height: 23)
+                .frame(width: 25, height: 25)
+                .background(RoundedRectangle(cornerRadius: 10).fill(.white))
+                .padding(.leading, 12)
+                .onTapGesture { session.toggleFollow(card.id) }
         }
-        .padding(4)
+        .padding(.leading, 4)
+        .padding(.trailing, 8)
+        .frame(height: 41)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.black.opacity(0.5))

@@ -296,7 +296,7 @@ final class YoohooSession: ObservableObject {
             tags: ["#Skiing", "#Exercise"],
             photo: "PostElowen",
             avatar: "AvatarElowen",
-            followed: false
+            followed: true
         )
     ]
 
