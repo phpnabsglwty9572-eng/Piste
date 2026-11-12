@@ -482,7 +482,7 @@ struct LiveGiftShop: View {
     }
 }
 
-private struct AudiencePerson: Identifiable {
+struct AudiencePerson: Identifiable {
     var id: String
     var userID: String
     var name: String

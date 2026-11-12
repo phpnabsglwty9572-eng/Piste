@@ -274,6 +274,7 @@ struct RoomMessageRow: Decodable, Identifiable {
     enum CodingKeys: String, CodingKey { case id, body; case senderID = "sender_id" }
 }
 
+struct FollowRow: Decodable { var follower: UUID; var followee: UUID }
 struct FollowWrite: Encodable { var follower: UUID; var followee: UUID }
 struct BlockWrite: Encodable { var blocker: UUID; var blocked: UUID }
 struct LikeWrite: Encodable {
