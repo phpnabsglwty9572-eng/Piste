@@ -198,12 +198,22 @@ struct MainTabBar: View {
             VStack(spacing: 1) {
                 ZStack {
                     Circle().fill(.white).frame(width: 36, height: 36)
-                    Image(selected ? on : off)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 36, height: 36)
+                    if tab == .home && selected {
+                        Image(on)
+                            .resizable()
+                            .frame(width: 36 * 1.05, height: 36 * 1.05)
+                            .offset(x: 36 * -0.025, y: 36 * -0.025)
+                            .frame(width: 36, height: 36, alignment: .topLeading)
+                            .clipped()
+                    } else {
+                        Image(selected ? on : off)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 36, height: 36)
+                            .clipped()
+                    }
                 }
-                .modifier(nav.tab == .home && selected ? SoftFloat(amount: 2) : SoftFloat(amount: 0))
+                .modifier(tab == .home && selected ? SoftFloat(amount: 2) : SoftFloat(amount: 0))
                 Text(title)
                     .font(YoohooFont.heavy(10))
                     .foregroundStyle(selected ? YoohooColor.ink : YoohooColor.gray)
@@ -260,6 +270,7 @@ struct HomeCard: View {
                 Image("PlayButton")
                     .resizable()
                     .frame(width: 34, height: 34)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(width: 343, height: 343)
             .buttonStyle(PressDownStyle())
@@ -332,14 +343,16 @@ struct HomeCard: View {
                     .frame(height: 17, alignment: .top)
             }
             .padding(.leading, 4)
-            Image("BadgePlus")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 23, height: 23)
-                .frame(width: 25, height: 25)
-                .background(RoundedRectangle(cornerRadius: 10).fill(.white))
-                .padding(.leading, 12)
-                .onTapGesture { session.toggleFollow(card.id) }
+            Button { session.toggleFollow(card.userID) } label: {
+                Image("BadgePlus")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 23, height: 23)
+                    .frame(width: 25, height: 25)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(.white))
+            }
+            .buttonStyle(PressDownStyle())
+            .padding(.leading, 12)
         }
         .padding(.leading, 4)
         .padding(.trailing, 8)

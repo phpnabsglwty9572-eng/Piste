@@ -106,14 +106,20 @@ struct LiveRoomView: View {
             Button { showAudience = true } label: {
                 HStack(spacing: 2) {
                     HStack(spacing: -15) {
-                        ForEach(audience.prefix(5)) { person in
-                            UserImage(name: person.avatar)
-                                .frame(width: 28, height: 28)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(.white, lineWidth: 0.5))
+                        ForEach(audienceFaces, id: \.self) { name in
+                            Group {
+                                if name.hasPrefix("http") {
+                                    UserImage(name: name)
+                                } else {
+                                    Image(name).resizable().scaledToFill()
+                                }
+                            }
+                            .frame(width: 28, height: 28)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(.white, lineWidth: 0.5))
                         }
                     }
-                    Text("\(audience.count)")
+                    Text("40+")
                         .font(YoohooFont.heavy(12))
                         .foregroundStyle(.black)
                         .frame(width: 28, height: 28)
@@ -189,6 +195,7 @@ struct LiveRoomView: View {
                     .lineLimit(1)
                     .padding(.horizontal, 8)
                     .frame(height: 33, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
             }
         }
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(white: 44 / 255).opacity(0.5)))
@@ -258,12 +265,10 @@ struct LiveRoomView: View {
                 .onSubmit(send)
         }
         .padding(.horizontal, 8)
-        .frame(maxWidth: 343)
-        .frame(height: 38)
+        .frame(width: 343, height: 38)
         .background(RoundedRectangle(cornerRadius: 10).fill(.white).overlay(RoundedRectangle(cornerRadius: 10).stroke(YoohooColor.pink, lineWidth: 1)))
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
         .frame(maxWidth: .infinity)
+        .padding(.bottom, 8)
         .onAppear { composing = true }
     }
 
@@ -287,6 +292,13 @@ struct LiveRoomView: View {
 
     private var room: FeedCard? {
         session.cards.first { $0.id == hostID }
+    }
+
+    private var audienceFaces: [String] {
+        let remote = audience.prefix(5).map(\.avatar).filter { !$0.isEmpty }
+        if remote.count >= 5 { return Array(remote) }
+        let placeholders = ["LiveFace1", "LiveFace2", "LiveFace3", "LiveFace4", "LiveFace5"]
+        return Array((remote + placeholders).prefix(5))
     }
 
     private var ownerID: String { room?.userID ?? "" }
@@ -501,8 +513,12 @@ struct LiveAudienceSheet: View {
             Color.clear.frame(height: 59)
             VStack(spacing: 16) {
                 Color.clear.frame(height: 63)
-                ForEach(people) { person in
-                    audienceRow(person)
+                if people.isEmpty {
+                    EmptyPenguin(message: "No more data").frame(height: 180)
+                } else {
+                    ForEach(people) { person in
+                        audienceRow(person)
+                    }
                 }
             }
             .padding(.horizontal, 16)
