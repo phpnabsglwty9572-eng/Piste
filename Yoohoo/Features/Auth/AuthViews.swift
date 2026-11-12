@@ -5,19 +5,15 @@ struct SplashView: View {
     @EnvironmentObject private var nav: AppNavigator
 
     var body: some View {
-        ZStack {
-            Image("SnowSky")
-                .resizable()
-                .scaledToFill()
-                .ignoresSafeArea()
-            AppMark(side: 65)
-            VStack {
-                Spacer()
-                GogglePile()
+        DesignBoard(height: 667) {
+            ZStack(alignment: .topLeading) {
+                AuthBackdrop()
+                AppMark(side: 65)
+                    .offset(x: 155, y: 244)
             }
-            .ignoresSafeArea(edges: .bottom)
+            .frame(width: 375, height: 667, alignment: .topLeading)
+            .clipped()
         }
-        .navigationBarHidden(true)
         .onAppear {
             Task {
                 try? await Task.sleep(nanoseconds: 1_100_000_000)
@@ -32,31 +28,22 @@ struct AuthLandingView: View {
     @EnvironmentObject private var session: YoohooSession
 
     var body: some View {
-        ZStack {
-            Image("SnowSky")
-                .resizable()
-                .scaledToFill()
-                .ignoresSafeArea()
-            VStack(spacing: 0) {
-                markAndButtons
+        DesignBoard(height: 667) {
+            ZStack(alignment: .topLeading) {
+                AuthBackdrop()
+                AppMark(side: 65)
+                    .offset(x: 155, y: 120)
+                appleButton
+                    .offset(x: 35, y: 254)
+                outlineButton("Create Account") { gate { nav.push(.register) } }
+                    .offset(x: 35, y: 331)
+                outlineButton("Sign In") { gate { nav.push(.signIn) } }
+                    .offset(x: 35, y: 391)
                 legalLine
-                    .padding(.top, 48)
-                Spacer(minLength: 8)
-                GogglePile()
+                    .offset(x: 34, y: 508)
             }
-        }
-        .background(NavigationGestureRelay())
-        .navigationBarHidden(true)
-    }
-
-    private var markAndButtons: some View {
-        VStack(spacing: 16) {
-            AppMark(side: 65)
-                .padding(.top, 76)
-                .padding(.bottom, 53)
-            appleButton
-            outlineButton("Create Account") { gate { nav.push(.register) } }
-            outlineButton("Sign In") { gate { nav.push(.signIn) } }
+            .frame(width: 375, height: 667, alignment: .topLeading)
+            .clipped()
         }
     }
 
@@ -64,11 +51,11 @@ struct AuthLandingView: View {
         Button {
             gate { Task { await apple() } }
         } label: {
-            ZStack {
-                Image("AppleButton")
+            ZStack(alignment: .top) {
+                Image("ButtonBlue")
                     .resizable()
                     .frame(width: 305, height: 64)
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     Image("AppleGlyph")
                         .resizable()
                         .frame(width: 25, height: 25)
@@ -77,9 +64,9 @@ struct AuthLandingView: View {
                         .foregroundStyle(.white)
                         .lineLimit(1)
                 }
-                .offset(y: 2)
+                .offset(y: 24)
             }
-            .frame(width: 305, height: 64)
+            .frame(width: 305, height: 64, alignment: .top)
         }
         .buttonStyle(PressDownStyle())
     }
@@ -108,8 +95,7 @@ struct AuthLandingView: View {
         .foregroundStyle(YoohooColor.ink)
         .buttonStyle(.plain)
         .lineLimit(1)
-        .minimumScaleFactor(0.7)
-        .padding(.horizontal, 20)
+        .fixedSize()
     }
 
     private func gate(_ work: @escaping () -> Void) {
@@ -163,22 +149,24 @@ struct AccountFormView: View {
     }
 
     var body: some View {
-        SnowForm(title: mode == .signIn ? "Sign In" : "Create Account") {
-            VStack(alignment: .leading, spacing: 16) {
+        DesignBoard(height: 667) {
+            ZStack(alignment: .topLeading) {
+                AuthChrome(title: mode == .signIn ? "Sign In" : "Create Account")
                 field(title: "Email", text: $email, prompt: "Your Email", secure: false)
+                    .offset(x: 16, y: 134)
                 field(title: "Password", text: $password, prompt: "Your Password", secure: true)
+                    .offset(x: 16, y: 218)
                 if mode == .register {
                     field(title: "Name", text: $name, prompt: "Your name", secure: false)
+                        .offset(x: 16, y: 302)
                 }
+                SnowButton(title: mode == .signIn ? "Sign In" : "Next", enabled: true) {
+                    submit()
+                }
+                .offset(x: 35, y: 582)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            Spacer(minLength: 24)
-            SnowButton(title: mode == .signIn ? "Sign In" : "Next", enabled: ready) {
-                submit()
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.bottom, 24)
+            .frame(width: 375, height: 667, alignment: .topLeading)
+            .clipped()
         }
     }
 
@@ -192,21 +180,31 @@ struct AccountFormView: View {
             }
             Group {
                 if secure {
-                    SecureField(prompt, text: text)
+                    SecureField("", text: text)
                 } else {
-                    TextField(prompt, text: text)
+                    TextField("", text: text)
                         .textInputAutocapitalization(title == "Name" ? .words : .never)
                         .keyboardType(title == "Email" ? .emailAddress : .default)
                 }
             }
             .font(YoohooFont.medium(14))
             .foregroundStyle(YoohooColor.ink)
-            .padding(.horizontal, 12)
-            .frame(height: 36)
-            .background(
+            .padding(.horizontal, 8)
+            .frame(width: 343, height: 36)
+            .background(Color.white)
+            .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(YoohooColor.blue, lineWidth: 1)
             )
+            .overlay(alignment: .leading) {
+                if text.wrappedValue.isEmpty {
+                    Text(prompt)
+                        .font(YoohooFont.medium(14))
+                        .foregroundStyle(YoohooColor.gray)
+                        .padding(.leading, 8)
+                        .allowsHitTesting(false)
+                }
+            }
             .onChange(of: text.wrappedValue) { value in
                 if title == "Name", value.count > YoohooConfig.nameLimit {
                     text.wrappedValue = String(value.prefix(YoohooConfig.nameLimit))
@@ -246,17 +244,18 @@ struct RegisterPhotosView: View {
     private var ready: Bool { avatar != nil && background != nil }
 
     var body: some View {
-        SnowForm(title: "Create Account") {
-            VStack(alignment: .leading, spacing: 16) {
+        DesignBoard(height: 667) {
+            ZStack(alignment: .topLeading) {
+                AuthChrome(title: "Create Account")
                 photoBlock(title: "Avatar", image: avatar, circle: true, item: $avatarItem)
+                    .offset(x: 16, y: 134)
                 photoBlock(title: "Background", image: background, circle: false, item: $backgroundItem)
+                    .offset(x: 16, y: 293)
+                SnowButton(title: "Create", enabled: true) { create() }
+                    .offset(x: 35, y: 582)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            Spacer(minLength: 24)
-            SnowButton(title: "Create", enabled: ready) { create() }
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 24)
+            .frame(width: 375, height: 667, alignment: .topLeading)
+            .clipped()
         }
         .onChange(of: avatarItem) { item in
             load(item) { avatar = $0 }
@@ -303,7 +302,7 @@ struct RegisterPhotosView: View {
     }
 
     private func photoShape(circle: Bool) -> AnyShape {
-        circle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        AnyShape(RoundedRectangle(cornerRadius: circle ? 55.5 : 10, style: .continuous))
     }
 
     private func load(_ item: PhotosPickerItem?, assign: @escaping (UIImage?) -> Void) {
@@ -328,6 +327,54 @@ struct RegisterPhotosView: View {
                 nav.enterApp()
             }
         }
+    }
+}
+
+struct AuthBackdrop: View {
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Image("SnowSky")
+                .resizable()
+                .frame(width: 375 * 1.0004, height: 668 * 1.2171, alignment: .topLeading)
+                .offset(x: 375 * -0.0002, y: 668 * -0.0599)
+            GogglePile()
+                .offset(y: 487)
+        }
+        .frame(width: 375, height: 667, alignment: .topLeading)
+        .clipped()
+    }
+}
+
+struct AuthChrome: View {
+    var title: String
+    @EnvironmentObject private var nav: AppNavigator
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            HeaderSky(height: 177)
+            Color.white
+                .frame(width: 375, height: 549)
+                .offset(y: 118)
+            SnowEdge()
+                .offset(y: 99)
+            Image("HeaderSled")
+                .resizable()
+                .frame(width: 32, height: 32)
+                .offset(x: 327, y: 86)
+            Button(action: nav.pop) {
+                Image("BackButton")
+                    .resizable()
+                    .frame(width: 34, height: 34)
+            }
+            .buttonStyle(PressDownStyle())
+            .offset(x: 16, y: 36)
+            Text(title)
+                .font(YoohooFont.title(20))
+                .foregroundStyle(YoohooColor.ink)
+                .lineLimit(1)
+                .offset(x: 58, y: 39)
+        }
+        .frame(width: 375, height: 667, alignment: .topLeading)
     }
 }
 

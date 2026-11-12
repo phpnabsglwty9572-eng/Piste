@@ -184,6 +184,7 @@ struct EmptyPenguin: View {
 
 struct PostCard: View {
     var post: PostItem
+    var showsActions = true
     @EnvironmentObject private var nav: AppNavigator
     @EnvironmentObject private var session: YoohooSession
     @State private var page = 0
@@ -244,7 +245,7 @@ struct PostCard: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
             .frame(width: 343, height: 380)
             .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-            if post.pageCount > 1 {
+            if showsActions && post.pageCount > 1 {
                 HStack(spacing: 5) {
                     ForEach(0..<post.pageCount, id: \.self) { index in
                         Circle()
@@ -266,18 +267,20 @@ struct PostCard: View {
                 Spacer()
                 HStack(spacing: 8) {
                     author
-                    Button { session.toggleLike(post.id) } label: {
-                        Image(post.liked ? "LikeOnGlyph" : "LikeGlyph").resizable().frame(width: 34, height: 34)
+                    if showsActions {
+                        Button { session.toggleLike(post.id) } label: {
+                            Image(post.liked ? "LikeOnGlyph" : "LikeGlyph").resizable().frame(width: 34, height: 34)
+                        }
+                        .buttonStyle(PressDownStyle())
+                        Button { nav.push(.postDetail(post.id)) } label: {
+                            Image("CommentGlyph").resizable().frame(width: 34, height: 34)
+                        }
+                        .buttonStyle(PressDownStyle())
+                        Button { nav.sheet = .about(.post(post.id)) } label: {
+                            Image("MoreCircle").resizable().frame(width: 34, height: 34)
+                        }
+                        .buttonStyle(PressDownStyle())
                     }
-                    .buttonStyle(PressDownStyle())
-                    Button { nav.push(.postDetail(post.id)) } label: {
-                        Image("CommentGlyph").resizable().frame(width: 34, height: 34)
-                    }
-                    .buttonStyle(PressDownStyle())
-                    Button { nav.sheet = .about(.post(post.id)) } label: {
-                        Image("MoreCircle").resizable().frame(width: 34, height: 34)
-                    }
-                    .buttonStyle(PressDownStyle())
                     Spacer(minLength: 0)
                 }
                 .padding(8)
@@ -341,9 +344,10 @@ struct PostDetailView: View {
             VStack(spacing: 0) {
                 if let post {
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 8) {
-                            PostCard(post: post)
+                        VStack(alignment: .leading, spacing: 0) {
+                            PostCard(post: post, showsActions: false)
                             commentBlock(post)
+                                .padding(.top, 37)
                         }
                         .padding(.bottom, 16)
                     }
@@ -365,12 +369,12 @@ struct PostDetailView: View {
                 .buttonStyle(PressDownStyle())
             }
             .padding(.trailing, 16)
-            .padding(.top, 36)
+            .padding(.top, 22)
         }
     }
 
     private func commentBlock(_ post: PostItem) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 2) {
                 FieldMark()
                 Text("Comment").font(YoohooFont.title(16)).foregroundStyle(YoohooColor.ink)
@@ -389,23 +393,22 @@ struct PostDetailView: View {
 
     private func commentRow(_ line: CommentItem) -> some View {
         HStack(alignment: .top, spacing: 4) {
-            Image(line.avatar)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 26, height: 26)
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
+            commentFace(line)
+            VStack(alignment: .leading, spacing: 0) {
                 Text(line.author + ":")
                     .font(YoohooFont.heavy(14))
                 Text(line.text)
                     .font(YoohooFont.medium(14))
+                    .frame(maxWidth: 278, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundStyle(.black)
+            .padding(.top, 4)
             Spacer(minLength: 8)
             Text(line.time)
                 .font(YoohooFont.medium(10))
-                .foregroundStyle(Color(white: 0.44))
+                .foregroundStyle(Color(red: 113 / 255, green: 113 / 255, blue: 113 / 255))
+                .padding(.top, 7)
         }
         .padding(.horizontal, 16)
         .contextMenu {
@@ -418,18 +421,50 @@ struct PostDetailView: View {
         }
     }
 
+    private func commentFace(_ line: CommentItem) -> some View {
+        let crop = commentCrop(line.author)
+        return Image(line.avatar)
+            .resizable()
+            .frame(width: 26 * crop.width, height: 26 * crop.height)
+            .offset(x: 26 * crop.left, y: 26 * crop.top)
+            .frame(width: 26, height: 26, alignment: .topLeading)
+            .clipped()
+            .clipShape(Circle())
+    }
+
+    private func commentCrop(_ author: String) -> (width: CGFloat, height: CGFloat, left: CGFloat, top: CGFloat) {
+        switch author {
+        case "Thalassa":
+            return (1.0122, 1.1333, -0.0061, -0.1333)
+        case "Torin":
+            return (1.0003, 1.3333, -0.0002, -0.3333)
+        default:
+            return (1.0048, 1.7857, -0.0024, -0.2857)
+        }
+    }
+
     private var commentBar: some View {
         HStack(spacing: 8) {
             Image("CommentSend").resizable().frame(width: 22, height: 22)
-            TextField("Please enter...", text: $draft)
-                .font(YoohooFont.medium(12))
-            Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .foregroundStyle(YoohooColor.pink)
+            ZStack(alignment: .leading) {
+                if draft.isEmpty {
+                    Text("Please enter...")
+                        .font(YoohooFont.medium(12))
+                        .foregroundStyle(YoohooColor.gray)
+                }
+                TextField("", text: $draft)
+                    .font(YoohooFont.medium(12))
+                    .foregroundStyle(YoohooColor.ink)
             }
-            .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0 : 1)
+            if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                Button(action: send) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .foregroundStyle(YoohooColor.pink)
+                }
+            }
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, 19)
+        .padding(.trailing, 12)
         .frame(height: 38)
         .background(RoundedRectangle(cornerRadius: 12).fill(.white).overlay(RoundedRectangle(cornerRadius: 12).stroke(YoohooColor.pink, lineWidth: 1)))
         .padding(.horizontal, 16)
