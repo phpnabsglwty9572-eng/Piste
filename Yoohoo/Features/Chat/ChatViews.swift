@@ -5,7 +5,10 @@ struct ChatListView: View {
     @EnvironmentObject private var session: YoohooSession
 
     private var threads: [ChatPerson] {
-        session.people.filter { !session.blocked.contains($0.id) }
+        session.people.filter { person in
+            session.blocked.contains(person.id) == false
+                && (person.preview.isEmpty == false || session.lines(for: person.id).isEmpty == false)
+        }
     }
 
     var body: some View {
@@ -24,7 +27,9 @@ struct ChatListView: View {
         ZStack(alignment: .bottom) {
             Color.clear
             HStack(spacing: 8) {
-                Button { nav.tab = .home } label: {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) { nav.tab = .home }
+                } label: {
                     Image("BackButton").resizable().frame(width: 34, height: 34)
                 }
                 .buttonStyle(PressDownStyle())
@@ -165,7 +170,7 @@ struct ChatListView: View {
         .buttonStyle(PressDownStyle())
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
-                nav.sheet = .deleteChat(person.id)
+                nav.sheet = .deleteChat(person.id, pop: false)
             } label: {
                 Image("ChatTrash")
             }
@@ -180,12 +185,15 @@ struct ChatThreadView: View {
     @EnvironmentObject private var session: YoohooSession
     @State private var draft = ""
 
-    private var person: ChatPerson? { session.people.first { $0.id == threadID } }
+    private var person: ChatPerson? {
+        session.people.first { $0.id == threadID } ?? session.contacts.first { $0.id == threadID }
+    }
 
     var body: some View {
         SnowForm(title: person?.name ?? "Chat") {
             VStack(spacing: 0) {
                 messageList
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 inputBar
             }
         }
@@ -205,8 +213,8 @@ struct ChatThreadView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        ForEach(rows) { line in
-                            bubble(line)
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, line in
+                            bubble(line, stamp: index == 0 || rows[index - 1].stamp != line.stamp)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -216,9 +224,9 @@ struct ChatThreadView: View {
         }
     }
 
-    private func bubble(_ line: ChatLine) -> some View {
+    private func bubble(_ line: ChatLine, stamp: Bool) -> some View {
         VStack(spacing: 8) {
-            if !line.stamp.isEmpty {
+            if stamp, !line.stamp.isEmpty {
                 Text(line.stamp)
                     .font(YoohooFont.medium(12))
                     .foregroundStyle(YoohooColor.gray)
@@ -227,9 +235,12 @@ struct ChatThreadView: View {
             HStack(alignment: .top, spacing: 4) {
                 if line.mine { Spacer(minLength: 16) }
                 if !line.mine, let person {
-                    UserImage(name: person.avatar)
-                        .frame(width: 35, height: 35)
-                        .clipShape(Circle())
+                    Button { nav.push(.profile(threadID)) } label: {
+                        UserImage(name: person.avatar)
+                            .frame(width: 35, height: 35)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(PressDownStyle())
                 }
                 Text(line.text)
                     .font(YoohooFont.medium(14))
@@ -247,11 +258,19 @@ struct ChatThreadView: View {
                                     .stroke(line.mine ? Color.clear : YoohooColor.blue, lineWidth: 1)
                             )
                     )
+                    .onLongPressGesture {
+                        if line.mine == false {
+                            nav.sheet = .about(.person(threadID))
+                        }
+                    }
                 if !line.mine { Spacer(minLength: 16) }
                 if line.mine {
-                    UserImage(name: session.avatarAsset)
-                        .frame(width: 35, height: 35)
-                        .clipShape(Circle())
+                    Button { nav.push(.profile(session.meID)) } label: {
+                        UserImage(name: session.avatarAsset)
+                            .frame(width: 35, height: 35)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(PressDownStyle())
                 }
             }
         }

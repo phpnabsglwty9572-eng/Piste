@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import WebKit
 
 struct SplashView: View {
     @EnvironmentObject private var nav: AppNavigator
@@ -7,10 +8,11 @@ struct SplashView: View {
 
     var body: some View {
         GeometryReader { geo in
-            ZStack {
+            ZStack(alignment: .top) {
                 AuthSkyFill()
                 AuthLogoMark()
-                    .position(x: geo.size.width / 2, y: 276.5)
+                    .padding(.top, 244)
+                    .frame(width: geo.size.width, alignment: .center)
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
@@ -121,9 +123,9 @@ struct AuthLandingView: View {
 
     private func apple() async {
         guard !session.busy else { return }
-        session.startLoading()
         do {
             let credential = try await AppleSignIn.request()
+            session.startLoading()
             try await session.signInWithApple(token: credential.identityToken, nonce: credential.nonce, userID: credential.userID, fullName: credential.fullName)
             session.stopLoading()
             nav.enterApp()
@@ -346,6 +348,7 @@ struct AuthLogoMark: View {
     var body: some View {
         Image("AuthLogo")
             .resizable()
+            .scaledToFill()
             .frame(width: 65, height: 65)
             .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
             .overlay(
@@ -494,22 +497,55 @@ struct SnowForm<Content: View>: View {
 struct LegalPage: View {
     var title: String
     var resource: String
-
-    @State private var bodyText = ""
+    var remote: URL?
 
     var body: some View {
         SnowForm(title: title) {
-            ScrollView {
-                Text(bodyText)
-                    .font(YoohooFont.medium(14))
-                    .foregroundStyle(YoohooColor.ink)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
+            DocumentWebView(url: remote, fallback: remote == nil ? bundledText(resource) : "")
+        }
+    }
+}
+
+struct DocumentWebView: UIViewRepresentable {
+    var url: URL?
+    var fallback: String
+
+    func makeUIView(context: Context) -> WKWebView {
+        let view = WKWebView()
+        view.isOpaque = false
+        view.backgroundColor = .white
+        view.scrollView.backgroundColor = .white
+        view.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
+        load(view)
+        return view
+    }
+
+    func updateUIView(_ view: WKWebView, context: Context) {
+        if let url, url.scheme == "https", view.url != url {
+            view.load(URLRequest(url: url))
+        }
+    }
+
+    private func load(_ view: WKWebView) {
+        if let url, url.scheme == "https" {
+            if view.url != url {
+                view.load(URLRequest(url: url))
             }
+            return
         }
-        .onAppear {
-            bodyText = bundledText(resource)
-        }
+        let html = """
+        <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>body{font-family:-apple-system,PingFang SC;font-size:14px;color:#111;padding:16px;line-height:1.45;white-space:pre-wrap;}</style>
+        </head><body>\(escaped)</body></html>
+        """
+        view.loadHTMLString(html, baseURL: nil)
+    }
+
+    private var escaped: String {
+        fallback
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
     }
 }
 
@@ -521,8 +557,8 @@ struct EULAView: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 12) {
-                Text("EULA")
-                    .font(YoohooFont.title(22))
+                Text("USER AGREEMENT")
+                    .font(YoohooFont.title(20))
                     .foregroundStyle(YoohooColor.ink)
                     .frame(maxWidth: .infinity)
                 ScrollView {

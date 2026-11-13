@@ -16,7 +16,15 @@ struct EditProfileView: View {
 
     private var ready: Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !trimmed.isEmpty && avatar != nil && cover != nil
+        return !trimmed.isEmpty && hasAvatar && hasCover
+    }
+
+    private var hasAvatar: Bool {
+        avatar != nil || session.avatarAsset.hasPrefix("http")
+    }
+
+    private var hasCover: Bool {
+        cover != nil || session.coverAsset.hasPrefix("http")
     }
 
     var body: some View {
@@ -32,6 +40,7 @@ struct EditProfileView: View {
                     label("Name")
                     TextField("Your name", text: $name)
                         .font(YoohooFont.medium(14))
+                        .foregroundStyle(YoohooColor.ink)
                         .onChange(of: name) { value in
                             if value.count > YoohooConfig.nameLimit {
                                 name = String(value.prefix(YoohooConfig.nameLimit))
@@ -77,6 +86,8 @@ struct EditProfileView: View {
             ZStack {
                 if let avatar {
                     Image(uiImage: avatar).resizable().scaledToFill()
+                } else if session.avatarAsset.hasPrefix("http") {
+                    UserImage(name: session.avatarAsset)
                 } else {
                     Circle().stroke(YoohooColor.blue, lineWidth: 1)
                     Image("EditUpload").resizable().frame(width: 25, height: 25)
@@ -94,6 +105,8 @@ struct EditProfileView: View {
             ZStack {
                 if let cover {
                     Image(uiImage: cover).resizable().scaledToFill()
+                } else if session.coverAsset.hasPrefix("http") {
+                    UserImage(name: session.coverAsset)
                 } else {
                     RoundedRectangle(cornerRadius: 10).stroke(YoohooColor.blue, lineWidth: 1)
                     VStack(spacing: 4) {
@@ -274,11 +287,12 @@ struct CoinShopView: View {
         Task {
             do {
                 let products = try await Product.products(for: [pack.id])
+                session.stopLoading()
                 guard let product = products.first else {
-                    session.stopLoading()
                     session.show(pack.id)
                     return
                 }
+                session.startLoading(blocksInput: false)
                 let result = try await product.purchase()
                 switch result {
                 case .success(let verification):

@@ -35,13 +35,14 @@ enum AboutTarget: Hashable {
     case post(String)
     case person(String)
     case chat(String)
+    case comment(String)
 }
 
 enum AppSheet: Identifiable {
     case eula
     case about(AboutTarget)
     case deletePost(String, pop: Bool)
-    case deleteChat(String)
+    case deleteChat(String, pop: Bool)
     case block(String, pop: Bool)
     case feedback
     case report
@@ -53,7 +54,7 @@ enum AppSheet: Identifiable {
         case .eula: return "eula"
         case .about(let target): return "about-\(target)"
         case .deletePost(let id, let pop): return "delete-\(id)-\(pop)"
-        case .deleteChat(let id): return "delete-chat-\(id)"
+        case .deleteChat(let id, let pop): return "delete-chat-\(id)-\(pop)"
         case .block(let id, let pop): return "block-\(id)-\(pop)"
         case .feedback: return "feedback"
         case .report: return "report"
@@ -73,6 +74,7 @@ final class AppNavigator: ObservableObject {
     @Published var tab: AppTab = .home
     @Published var path = NavigationPath()
     @Published var sheet: AppSheet?
+    @Published var mediaPreview: String?
 
     func openAuth() {
         stage = .auth

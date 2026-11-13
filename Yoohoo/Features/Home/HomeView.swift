@@ -9,7 +9,7 @@ struct HomeView: View {
             Color.white.ignoresSafeArea()
             GeometryReader { geo in
                 ScrollView {
-                    feed(width: geo.size.width)
+                    feed(width: geo.size.width, height: geo.size.height)
                 }
             }
         }
@@ -17,12 +17,12 @@ struct HomeView: View {
         .navigationBarHidden(true)
     }
 
-    private func feed(width: CGFloat) -> some View {
+    private func feed(width: CGFloat, height: CGFloat) -> some View {
         VStack(spacing: 0) {
             header(width: width)
             VStack(spacing: 16) {
                 if session.cards.isEmpty {
-                    EmptyPenguin(message: "No more data").frame(height: 280)
+                    EmptyPenguin(message: "No more data").frame(minHeight: 280)
                 }
                 ForEach(session.cards) { card in
                     HomeCard(card: card)
@@ -32,6 +32,7 @@ struct HomeView: View {
             .padding(.bottom, 24)
             .frame(width: 375)
             .frame(width: width)
+            .frame(minHeight: max(height - 284, 280), alignment: .top)
             .background(Color.white)
         }
     }
@@ -56,16 +57,6 @@ struct HomeView: View {
             headerMarks
                 .frame(width: 375, alignment: .topLeading)
                 .frame(width: width, alignment: .top)
-        }
-        .overlay(alignment: .topTrailing) {
-            Button { nav.push(.settings) } label: {
-                Image("SettingsIcon")
-                    .resizable()
-                    .frame(width: 34, height: 34)
-            }
-            .buttonStyle(PressDownStyle())
-            .padding(.trailing, 16)
-            .padding(.top, 16)
         }
         .frame(width: width, height: 284, alignment: .topLeading)
     }
@@ -211,7 +202,9 @@ struct MainTabBar: View {
     private func item(_ tab: AppTab, on: String, off: String, title: String) -> some View {
         let selected = nav.tab == tab
         return Button {
-            nav.tab = tab
+            withAnimation(.easeInOut(duration: 0.25)) {
+                nav.tab = tab
+            }
         } label: {
             VStack(spacing: 1) {
                 ZStack {
@@ -273,27 +266,21 @@ struct HomeCard: View {
 
     private var photo: some View {
         ZStack(alignment: .topLeading) {
-            if card.photo.hasPrefix("http") {
-                UserImage(name: card.photo)
-                    .frame(width: 343, height: 343)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-            } else {
-                Color(red: 0.85, green: 0.93, blue: 1)
-                    .frame(width: 343, height: 343)
-                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-            }
+            cover
+                .frame(width: 343, height: 343)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
             liveBadge
                 .padding(8)
             Button { nav.push(.live(card.id)) } label: {
                 Image("PlayButton")
                     .resizable()
                     .frame(width: 34, height: 34)
+                    .modifier(SoftFloat(amount: 3))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(width: 343, height: 343)
             .buttonStyle(PressDownStyle())
-            .modifier(SoftFloat(amount: 3))
             VStack {
                 Spacer()
                 HStack(spacing: 8) {
@@ -317,6 +304,16 @@ struct HomeCard: View {
             .frame(width: 343, height: 343)
         }
         .frame(width: 343, height: 343)
+    }
+
+    private var cover: some View {
+        Group {
+            if card.photo.hasPrefix("http") {
+                UserImage(name: card.photo)
+            } else {
+                Image("LiveStage").resizable().scaledToFill()
+            }
+        }
     }
 
     private var liveBadge: some View {
@@ -362,16 +359,18 @@ struct HomeCard: View {
                     .frame(height: 17, alignment: .top)
             }
             .padding(.leading, 4)
-            Button { session.toggleFollow(card.userID) } label: {
-                Image("BadgePlus")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 23, height: 23)
-                    .frame(width: 25, height: 25)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(.white))
+            if card.followed == false {
+                Button { session.toggleFollow(card.userID) } label: {
+                    Image("BadgePlus")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 23, height: 23)
+                        .frame(width: 25, height: 25)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(.white))
+                }
+                .buttonStyle(PressDownStyle())
+                .padding(.leading, 12)
             }
-            .buttonStyle(PressDownStyle())
-            .padding(.leading, 12)
         }
         .padding(.leading, 4)
         .padding(.trailing, 8)

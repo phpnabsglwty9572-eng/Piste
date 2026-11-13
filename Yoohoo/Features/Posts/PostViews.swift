@@ -33,7 +33,9 @@ struct PostFeedView: View {
         ZStack(alignment: .bottom) {
             Color.clear
             HStack(spacing: 8) {
-                Button { nav.tab = .home } label: {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) { nav.tab = .home }
+                } label: {
                     Image("BackButton").resizable().frame(width: 34, height: 34)
                 }
                 .buttonStyle(PressDownStyle())
@@ -72,8 +74,12 @@ struct PostFeedView: View {
 
     private var filterRow: some View {
         SnowFilterBar {
-            SnowChoice(title: "Popular", selected: filter == .popular) { filter = .popular }
-            SnowChoice(title: "Followed", selected: filter == .followed) { filter = .followed }
+            SnowChoice(title: "Popular", selected: filter == .popular) {
+                withAnimation(.easeInOut(duration: 0.25)) { filter = .popular }
+            }
+            SnowChoice(title: "Followed", selected: filter == .followed) {
+                withAnimation(.easeInOut(duration: 0.25)) { filter = .followed }
+            }
         }
     }
 
@@ -255,7 +261,7 @@ struct PostCard: View {
                                 .resizable()
                                 .scaledToFill()
                         } else if name.isEmpty {
-                            Color(red: 0.85, green: 0.93, blue: 1)
+                            ImageShimmer()
                         } else {
                             Image(name)
                                 .resizable()
@@ -282,7 +288,11 @@ struct PostCard: View {
                 .frame(width: 343)
                 .padding(.top, 8)
             }
-            if post.isVideo && !playing {
+            if post.isVideo, let clip = post.photos.first, let url = URL(string: clip), playing {
+                LoopingVideo(url: url)
+                    .frame(width: 343, height: 380)
+                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            } else if post.isVideo && !playing {
                 Button { playing = true } label: {
                     Image("PlayButton").resizable().frame(width: 34, height: 34)
                 }
@@ -315,7 +325,18 @@ struct PostCard: View {
         }
         .frame(width: 343, height: 380)
         .contentShape(RoundedRectangle(cornerRadius: 15))
-        .onTapGesture { nav.push(.postDetail(post.id)) }
+        .onTapGesture {
+            if post.isVideo {
+                nav.push(.postDetail(post.id))
+                return
+            }
+            let name = post.photos.isEmpty ? "" : post.photos[page % max(post.photos.count, 1)]
+            if name.isEmpty == false {
+                nav.mediaPreview = name
+            } else {
+                nav.push(.postDetail(post.id))
+            }
+        }
     }
 
     private var crop: (width: CGFloat, height: CGFloat, left: CGFloat, top: CGFloat) {
@@ -327,10 +348,13 @@ struct PostCard: View {
 
     private var author: some View {
         HStack(spacing: 4) {
-            UserImage(name: post.avatar)
-                .frame(width: 33, height: 33)
-                .clipShape(RoundedRectangle(cornerRadius: post.isVideo ? 12 : 10))
-                .overlay(RoundedRectangle(cornerRadius: post.isVideo ? 12 : 10).stroke(.white, lineWidth: 1))
+            Button { nav.push(.profile(post.userID)) } label: {
+                UserImage(name: post.avatar)
+                    .frame(width: 33, height: 33)
+                    .clipShape(RoundedRectangle(cornerRadius: post.isVideo ? 12 : 10))
+                    .overlay(RoundedRectangle(cornerRadius: post.isVideo ? 12 : 10).stroke(.white, lineWidth: 1))
+            }
+            .buttonStyle(PressDownStyle())
             VStack(alignment: .leading, spacing: 0) {
                 Text(post.name).font(YoohooFont.heavy(16)).foregroundStyle(.white)
                 Text(post.handle).font(YoohooFont.medium(12)).foregroundStyle(.white)
@@ -435,20 +459,24 @@ struct PostDetailView: View {
                 .padding(.top, 7)
         }
         .padding(.horizontal, 16)
-        .contextMenu {
+        .onLongPressGesture {
             if line.mine {
-                Button("Delete") { session.deleteComment(line.id) }
+                session.deleteComment(line.id)
+                session.show("Deleted.")
             } else {
-                Button("Report") { report(line.id) }
-                Button("Add to Blacklist") { nav.sheet = .block(line.userID, pop: false) }
+                nav.sheet = .about(.comment(line.id))
             }
         }
     }
 
     private func commentFace(_ line: CommentItem) -> some View {
-        UserImage(name: line.avatar)
-            .frame(width: 26, height: 26)
-            .clipShape(Circle())
+        Button { nav.push(.profile(line.userID)) } label: {
+            UserImage(name: line.avatar)
+                .frame(width: 26, height: 26)
+                .clipShape(Circle())
+        }
+        .buttonStyle(PressDownStyle())
+        .disabled(line.userID.isEmpty)
     }
 
     private func commentCrop(_ author: String) -> (width: CGFloat, height: CGFloat, left: CGFloat, top: CGFloat) {
@@ -495,11 +523,6 @@ struct PostDetailView: View {
         let text = draft
         draft = ""
         session.addComment(postID: postID, text: text)
-    }
-
-    private func report(_ id: String) {
-        session.reportTarget = id
-        nav.sheet = .report
     }
 }
 
@@ -673,14 +696,22 @@ struct ComposePostView: View {
     private var tagSheet: some View {
         ZStack(alignment: .bottom) {
             Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { showTags = false }
-            VStack(spacing: 16) {
-                SnowSheetHeader(title: "Add Tag") { showTags = false }
-                TextField("Please enter...", text: $tagDraft)
-                    .font(YoohooFont.medium(14))
-                    .padding(8)
-                    .frame(height: 100, alignment: .topLeading)
-                    .background(RoundedRectangle(cornerRadius: 10).stroke(YoohooColor.blue, lineWidth: 1))
-                    .padding(.horizontal, 16)
+            SnowBottomSheet(title: "Add Tag", close: { showTags = false }) {
+                ZStack(alignment: .topLeading) {
+                    if tagDraft.isEmpty {
+                        Text("Please enter...")
+                            .font(YoohooFont.medium(14))
+                            .foregroundStyle(YoohooColor.gray)
+                            .padding(8)
+                    }
+                    TextField("", text: $tagDraft, axis: .vertical)
+                        .font(YoohooFont.medium(14))
+                        .foregroundStyle(YoohooColor.ink)
+                        .padding(8)
+                }
+                .frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
+                .background(RoundedRectangle(cornerRadius: 10).stroke(YoohooColor.blue, lineWidth: 1))
+                .padding(.horizontal, 16)
                 SnowButton(title: "Confirm", enabled: !tagDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
                     let raw = tagDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                     let tag = raw.hasPrefix("#") ? raw : "#" + raw
@@ -688,13 +719,7 @@ struct ComposePostView: View {
                     tagDraft = ""
                     showTags = false
                 }
-                .padding(.bottom, 12)
             }
-            .frame(maxWidth: .infinity)
-            .background(
-                Color.white
-                    .overlay(Rectangle().stroke(YoohooColor.yellow, lineWidth: 1).padding(.top, 70))
-            )
         }
     }
 
@@ -706,7 +731,7 @@ struct ComposePostView: View {
         let clip = videoMode ? videoData : nil
         Task {
             do {
-                try await session.publishMedia(caption: text, images: clip == nil ? shots : [], video: clip)
+                try await session.publishMedia(caption: text, tags: tags, images: clip == nil ? shots : [], video: clip)
                 session.stopLoading()
                 session.show("Posted.")
                 nav.pop()
@@ -766,55 +791,32 @@ struct AboutSheet: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Color.clear.frame(height: 59)
+        SnowBottomSheet(title: "About", close: { nav.sheet = nil }) {
             VStack(spacing: 16) {
-                Color.clear.frame(height: 63)
                 rows
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 24)
-            .frame(maxWidth: .infinity)
-            .background(Color.white)
-            .overlay(Rectangle().stroke(YoohooColor.yellow, lineWidth: 1).padding(.top, 59))
-        }
-        .overlay(alignment: .top) {
-            Image("SnowSheet")
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .frame(height: 82)
-                .clipped()
-                .allowsHitTesting(false)
-        }
-        .overlay(alignment: .top) {
-            ZStack {
-                Text("About")
-                    .font(YoohooFont.title(20))
-                    .foregroundStyle(YoohooColor.ink)
-                HStack {
-                    Spacer()
-                    Button { nav.sheet = nil } label: {
-                        Image("CloseBadge").resizable().frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(PressDownStyle())
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 70)
         }
     }
 
     @ViewBuilder
     private var rows: some View {
-        if isChat {
+        if case .comment = target {
+            row("MenuReport", "Report") {
+                session.reportTarget = personID
+                nav.sheet = .report
+            }
+            row("MenuSad", "Add to Blacklist") {
+                nav.sheet = .block(personID, pop: true)
+            }
+        } else if isChat {
             row("MenuReport", "Report") {
                 session.reportTarget = personID
                 nav.sheet = .report
             }
             row("MenuTrash", "Delete Chat") {
                 if case .chat(let id) = target {
-                    nav.sheet = .deleteChat(id)
+                    nav.sheet = .deleteChat(id, pop: true)
                 }
             }
         } else if mine {
@@ -822,6 +824,11 @@ struct AboutSheet: View {
                 if case .post(let id) = target {
                     nav.sheet = .deletePost(id, pop: true)
                 }
+            }
+        } else if personID == session.meID || personID == "pegu" {
+            row("MenuReport", "Report") {
+                session.reportTarget = personID
+                nav.sheet = .report
             }
         } else {
             row("MenuReport", "Report") {
@@ -842,6 +849,8 @@ struct AboutSheet: View {
             return id
         case .chat(let id):
             return id
+        case .comment(let id):
+            return session.comments.first { $0.id == id }?.userID ?? id
         }
     }
 
@@ -867,8 +876,7 @@ struct ReportSheet: View {
     @State private var text = ""
 
     var body: some View {
-        VStack(spacing: 16) {
-            SnowSheetHeader(title: "Report") { nav.sheet = nil }
+        SnowBottomSheet(title: "Report", close: { nav.sheet = nil }) {
             ZStack(alignment: .topLeading) {
                 if text.isEmpty {
                     Text("Please enter...")
@@ -885,7 +893,7 @@ struct ReportSheet: View {
             .frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
             .background(RoundedRectangle(cornerRadius: 10).stroke(YoohooColor.blue, lineWidth: 1))
             .padding(.horizontal, 16)
-            SnowButton(title: "Submit", enabled: true) {
+            SnowButton(title: "Submit", enabled: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
                 let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !body.isEmpty, !session.busy else { return }
                 nav.sheet = nil
@@ -898,13 +906,7 @@ struct ReportSheet: View {
                     session.stopLoading()
                 }
             }
-            .padding(.bottom, 12)
         }
-        .frame(maxWidth: .infinity)
-        .background(
-            Color.white
-                .overlay(Rectangle().stroke(YoohooColor.yellow, lineWidth: 1).padding(.top, 70))
-        )
     }
 }
 
@@ -915,20 +917,13 @@ struct ConfirmSnowSheet: View {
     var close: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            SnowSheetHeader(title: title, close: close)
+        SnowBottomSheet(title: title, close: close) {
             Text(message)
                 .font(YoohooFont.medium(14))
                 .foregroundStyle(YoohooColor.ink)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 16)
             SnowButton(title: "Confirm", enabled: true, action: confirm)
-                .padding(.bottom, 12)
         }
-        .frame(maxWidth: .infinity)
-        .background(
-            Color.white
-                .overlay(Rectangle().stroke(YoohooColor.yellow, lineWidth: 1).padding(.top, 70))
-        )
     }
 }

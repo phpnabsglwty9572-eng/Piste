@@ -11,9 +11,7 @@ struct ProfileView: View {
     private var rows: [PostItem] {
         session.posts.filter { post in
             guard session.blocked.contains(post.userID) == false else { return false }
-            if likes {
-                return mine ? post.liked : post.userID == userID && post.liked
-            }
+            if likes { return post.liked && (mine || post.userID == userID) }
             return post.userID == userID
         }
     }
@@ -147,64 +145,65 @@ struct ProfileView: View {
     }
 
     private var identity: some View {
-        HStack {
-            Spacer()
+        ZStack(alignment: .trailing) {
             VStack(spacing: 2) {
                 Text(displayName).font(YoohooFont.heavy(18)).foregroundStyle(YoohooColor.ink)
                 Text(displayHandle).font(YoohooFont.medium(14)).foregroundStyle(YoohooColor.gray)
             }
-            Spacer()
+            .frame(maxWidth: .infinity)
             if mine {
-                Button { nav.push(.coinShop) } label: {
-                    HStack(spacing: 4) {
-                        Image("CoinShop").resizable().scaledToFit().frame(width: 44, height: 44)
-                        Text("Coin Shop")
-                            .font(YoohooFont.title(18))
-                            .foregroundStyle(.black)
-                            .shadow(color: Color(red: 212 / 255, green: 188 / 255, blue: 0), radius: 0, y: 2)
-                    }
-                    .padding(.leading, 8)
-                    .frame(height: 34)
-                    .background(
-                        UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 12, bottomLeading: 12, bottomTrailing: 0, topTrailing: 0))
-                            .fill(Color(red: 1, green: 237 / 255, blue: 101 / 255))
-                            .overlay(
-                                UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 12, bottomLeading: 12, bottomTrailing: 0, topTrailing: 0))
-                                    .stroke(YoohooColor.blue, lineWidth: 1)
-                            )
-                    )
-                }
-                .buttonStyle(PressDownStyle())
+                shopChip
             } else {
-                Button {
-                    Task {
-                        await session.ensureChat(userID)
-                        nav.push(.chat(userID))
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image("ChatNow").resizable().scaledToFit().frame(width: 44, height: 44)
-                        Text("Chat Now")
-                            .font(YoohooFont.title(18))
-                            .foregroundStyle(.black)
-                            .shadow(color: Color(red: 245 / 255, green: 183 / 255, blue: 1), radius: 0, y: 2)
-                    }
-                    .padding(.leading, 8)
-                    .frame(height: 34)
-                    .background(
-                        UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 12, bottomLeading: 12, bottomTrailing: 0, topTrailing: 0))
-                            .fill(Color(red: 251 / 255, green: 226 / 255, blue: 1))
-                            .overlay(
-                                UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 12, bottomLeading: 12, bottomTrailing: 0, topTrailing: 0))
-                                    .stroke(YoohooColor.blue, lineWidth: 1)
-                            )
-                    )
-                }
-                .buttonStyle(PressDownStyle())
+                chatChip
             }
         }
         .padding(.top, 8)
-        .padding(.trailing, mine ? 0 : 16)
+    }
+
+    private var shopChip: some View {
+        Button { nav.push(.coinShop) } label: {
+            HStack(spacing: 4) {
+                Image("CoinShop").resizable().scaledToFit().frame(width: 44, height: 44)
+                Text("Coin Shop")
+                    .font(YoohooFont.title(18))
+                    .foregroundStyle(.black)
+                    .shadow(color: Color(red: 212 / 255, green: 188 / 255, blue: 0), radius: 0, y: 2)
+            }
+            .padding(.leading, 8)
+            .frame(height: 34)
+            .background(
+                UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 12, bottomLeading: 12, bottomTrailing: 0, topTrailing: 0))
+                    .fill(Color(red: 1, green: 237 / 255, blue: 101 / 255))
+                    .overlay(
+                        UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 12, bottomLeading: 12, bottomTrailing: 0, topTrailing: 0))
+                            .stroke(YoohooColor.blue, lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(PressDownStyle())
+    }
+
+    private var chatChip: some View {
+        Button { nav.push(.chat(userID)) } label: {
+            HStack(spacing: 4) {
+                Image("ChatNow").resizable().scaledToFit().frame(width: 44, height: 44)
+                Text("Chat Now")
+                    .font(YoohooFont.title(18))
+                    .foregroundStyle(.black)
+                    .shadow(color: Color(red: 245 / 255, green: 183 / 255, blue: 1), radius: 0, y: 2)
+            }
+            .padding(.leading, 8)
+            .frame(height: 34)
+            .background(
+                UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 12, bottomLeading: 12, bottomTrailing: 0, topTrailing: 0))
+                    .fill(Color(red: 251 / 255, green: 226 / 255, blue: 1))
+                    .overlay(
+                        UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 12, bottomLeading: 12, bottomTrailing: 0, topTrailing: 0))
+                            .stroke(YoohooColor.blue, lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(PressDownStyle())
     }
 
     private var displayName: String {
@@ -223,21 +222,36 @@ struct ProfileView: View {
 
     private var stats: some View {
         HStack(spacing: 0) {
-            stat(mine ? "\(session.followedCount)" : "0", "Followed")
+            stat("\(followedValue)", "Followed") { if mine { nav.push(.people("Followed")) } }
             divider
-            stat(mine ? "\(session.fanCount)" : "0", "Fans")
+            stat("\(fanValue)", "Fans") { if mine { nav.push(.people("Fans")) } }
             divider
-            stat(mine ? "\(session.blocked.count)" : "0", "Blacklist")
+            stat("\(blacklistValue)", "Blacklist") { if mine { nav.push(.people("Blacklist")) } }
         }
         .padding(.horizontal, 16)
     }
 
-    private func stat(_ value: String, _ title: String) -> some View {
-        VStack(spacing: 0) {
-            Text(value).font(YoohooFont.heavy(18)).foregroundStyle(.black)
-            Text(title).font(YoohooFont.medium(12)).foregroundStyle(YoohooColor.ink)
+    private var followedValue: Int {
+        mine ? session.followedCount : (session.followingByUser[userID] ?? 0)
+    }
+
+    private var fanValue: Int {
+        mine ? session.fanCount : (session.fansByUser[userID] ?? 0)
+    }
+
+    private var blacklistValue: Int {
+        mine ? session.blocked.count : 0
+    }
+
+    private func stat(_ value: String, _ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 0) {
+                Text(value).font(YoohooFont.heavy(18)).foregroundStyle(.black)
+                Text(title).font(YoohooFont.medium(12)).foregroundStyle(YoohooColor.ink)
+            }
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity)
+        .buttonStyle(.plain)
     }
 
     private var divider: some View {
@@ -246,8 +260,12 @@ struct ProfileView: View {
 
     private var filters: some View {
         HStack(spacing: 13) {
-            SnowChoice(title: "Post", selected: !likes, width: 165) { likes = false }
-            SnowChoice(title: "Like", selected: likes, width: 165) { likes = true }
+            SnowChoice(title: "Post", selected: !likes, width: 165) {
+                withAnimation(.easeInOut(duration: 0.25)) { likes = false }
+            }
+            SnowChoice(title: "Like", selected: likes, width: 165) {
+                withAnimation(.easeInOut(duration: 0.25)) { likes = true }
+            }
         }
         .frame(width: 343)
         .frame(maxWidth: .infinity)
@@ -265,5 +283,7 @@ struct ProfileView: View {
                 }
             }
         }
+        .id(likes)
+        .transition(.opacity.combined(with: .move(edge: .trailing)))
     }
 }

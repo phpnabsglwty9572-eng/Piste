@@ -10,6 +10,8 @@ enum YoohooConfig {
     static let supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqYmRidW9vZWZxdnNvdmpqd2hxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4NDQwMTYsImV4cCI6MjEwOTQyMDAxNn0.9yUcWTyUR9YH36vGGeYVSj327vn1YUVcnkciCcxsDV0"
     #endif
     static let nameLimit = 24
+    static let termsURL = URL(string: "https://docs.google.com/document/d/1sIwxJ-2XpppQrlxrbGsCb5li5Nh36ODlMY6IGp_6nTo/preview")
+    static let privacyURL = URL(string: "https://docs.google.com/document/d/10JLwuVTRezN7lY9ZdxQ6uV6cJdrucYLCCIyo5i2TQ3k/preview")
 
     static var backendReady: Bool {
         supabaseURL.hasPrefix("https://") && supabaseKey.isEmpty == false
@@ -110,6 +112,7 @@ final class YoohooSession: ObservableObject {
     @Published var toast: String?
     @Published var toastSpinning = false
     @Published var busy = false
+    @Published var blocksInput = true
     @Published var acceptedEULA = false
     @Published var signedIn = false
     @Published var meName = ""
@@ -120,6 +123,8 @@ final class YoohooSession: ObservableObject {
     @Published var coins = 0
     @Published var followedCount = 0
     @Published var fanCount = 0
+    @Published var followingByUser: [String: Int] = [:]
+    @Published var fansByUser: [String: Int] = [:]
     @Published var followedIDs: Set<String> = []
     @Published var extraFollowed: [String] = []
     @Published var blocked: [String] = []
@@ -147,15 +152,17 @@ final class YoohooSession: ObservableObject {
         acceptedEULA = UserDefaults.standard.bool(forKey: eulaKey)
     }
 
-    func startLoading() {
+    func startLoading(blocksInput: Bool = true) {
         guard !busy else { return }
         busy = true
+        self.blocksInput = blocksInput
         toastSpinning = true
         toast = "Please wait"
     }
 
     func stopLoading() {
         busy = false
+        blocksInput = true
         toastSpinning = false
         if toast == "Please wait" { toast = nil }
     }
@@ -248,7 +255,7 @@ final class YoohooSession: ObservableObject {
         await reload()
     }
 
-    func publishMedia(caption: String, images: [UIImage], video: Data?) async throws {
+    func publishMedia(caption: String, tags: [String] = [], images: [UIImage], video: Data?) async throws {
         guard let me = UUID(uuidString: meID) else { return }
         var urls: [String] = []
         if let video {
@@ -259,7 +266,7 @@ final class YoohooSession: ObservableObject {
                 urls.append(try await YoohooBackend.upload(data: data, path: "yoohoo/posts/\(UUID().uuidString).jpg", type: "image/jpeg"))
             }
         }
-        try await YoohooBackend.publish(author: me, body: caption, urls: urls, video: video != nil)
+        try await YoohooBackend.publish(author: me, body: Self.mergeTags(caption, tags), urls: urls, video: video != nil)
         await reload()
     }
 
@@ -291,13 +298,24 @@ final class YoohooSession: ObservableObject {
         followedIDs = following
         followedCount = following.count
         fanCount = library.follows.filter { $0.followee.uuidString.lowercased() == me }.count
+        var followingMap: [String: Int] = [:]
+        var fanMap: [String: Int] = [:]
+        for edge in library.follows {
+            let from = edge.follower.uuidString.lowercased()
+            let to = edge.followee.uuidString.lowercased()
+            followingMap[from, default: 0] += 1
+            fanMap[to, default: 0] += 1
+        }
+        followingByUser = followingMap
+        fansByUser = fanMap
         blocked = library.blocks.map { $0.blocked.uuidString.lowercased() }
         let liked = Set(library.likes.map { $0.postID.uuidString.lowercased() })
         posts = library.posts.compactMap { row in
             let author = row.authorID.uuidString.lowercased()
             guard blocked.contains(author) == false, let profile = profiles[author] else { return nil }
             let photos = row.mediaURLs ?? row.mediaURL.map { [$0] } ?? []
-            return PostItem(id: row.id.uuidString.lowercased(), userID: author, name: profile.name, handle: profile.handle, avatar: profile.avatarURL ?? "", caption: row.body, tags: [], photos: photos, isVideo: row.isVideo, time: stamp(row.createdAt), followed: following.contains(author), liked: liked.contains(row.id.uuidString.lowercased()), pageCount: max(photos.count, 1), mine: author == me)
+            let split = Self.splitTags(row.body)
+            return PostItem(id: row.id.uuidString.lowercased(), userID: author, name: profile.name, handle: profile.handle, avatar: profile.avatarURL ?? "", caption: split.caption, tags: split.tags, photos: photos, isVideo: row.isVideo, time: stamp(row.createdAt), followed: following.contains(author), liked: liked.contains(row.id.uuidString.lowercased()), pageCount: max(photos.count, 1), mine: author == me)
         }
         comments = library.comments.compactMap { row in
             let author = row.authorID.uuidString.lowercased()
@@ -307,7 +325,8 @@ final class YoohooSession: ObservableObject {
         cards = library.rooms.compactMap { room in
             let owner = room.ownerID.uuidString.lowercased()
             guard blocked.contains(owner) == false, let profile = profiles[owner] else { return nil }
-            return FeedCard(id: room.id.uuidString.lowercased(), userID: owner, name: profile.name, handle: profile.handle, caption: room.title, tags: [], photo: room.coverURL ?? "", avatar: profile.avatarURL ?? "", followed: following.contains(owner), videoURL: room.videoURL ?? "")
+            let split = Self.splitTags(room.title)
+            return FeedCard(id: room.id.uuidString.lowercased(), userID: owner, name: profile.name, handle: profile.handle, caption: split.caption, tags: split.tags, photo: room.coverURL ?? "", avatar: profile.avatarURL ?? "", followed: following.contains(owner), videoURL: room.videoURL ?? "")
         }
         var threads: [String: String] = [:]
         var chatPeople: [ChatPerson] = []
@@ -319,9 +338,9 @@ final class YoohooSession: ObservableObject {
             guard blocked.contains(other) == false, let profile = profiles[other] else { continue }
             threads[other] = thread.id.uuidString.lowercased()
             let rows = library.messages.filter { $0.threadID == thread.id }
-            chatPeople.append(ChatPerson(id: other, name: profile.name, handle: profile.handle, avatar: profile.avatarURL ?? "", followed: following.contains(other), preview: rows.last?.body ?? "", time: ""))
+            chatPeople.append(ChatPerson(id: other, name: profile.name, handle: profile.handle, avatar: profile.avatarURL ?? "", followed: following.contains(other), preview: rows.last?.body ?? "", time: Self.listStamp(rows.last?.createdAt)))
             for row in rows {
-                chatLines.append(ChatLine(id: row.id.uuidString.lowercased(), threadID: other, text: row.body, mine: row.senderID.uuidString.lowercased() == me, stamp: ""))
+                chatLines.append(ChatLine(id: row.id.uuidString.lowercased(), threadID: other, text: row.body, mine: row.senderID.uuidString.lowercased() == me, stamp: stamp(row.createdAt ?? "")))
             }
         }
         threadForUser = threads
@@ -345,6 +364,17 @@ final class YoohooSession: ObservableObject {
     private func stamp(_ raw: String) -> String {
         guard let marker = raw.firstIndex(of: "T") else { return "" }
         return String(raw[raw.index(after: marker)...].prefix(5))
+    }
+
+    static func listStamp(_ raw: String?) -> String {
+        guard let raw, let marker = raw.firstIndex(of: "T") else { return "" }
+        let clock = String(raw[raw.index(after: marker)...].prefix(5))
+        let day = String(raw.prefix(10))
+        let today = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        if day == today { return String(clock) }
+        let parts = day.split(separator: "-")
+        guard parts.count == 3 else { return String(clock) }
+        return "\(parts[1])/\(parts[2])"
     }
 
     func isFollowed(_ id: String) -> Bool {
@@ -373,12 +403,16 @@ final class YoohooSession: ObservableObject {
         if value {
             followedIDs.insert(id)
             followedCount += 1
+            followingByUser[meID, default: 0] += 1
+            fansByUser[id, default: 0] += 1
             if Self.followedPageIDs.contains(id) == false && extraFollowed.contains(id) == false {
                 extraFollowed.append(id)
             }
         } else {
             followedIDs.remove(id)
             followedCount = max(0, followedCount - 1)
+            followingByUser[meID] = max(0, (followingByUser[meID] ?? 1) - 1)
+            fansByUser[id] = max(0, (fansByUser[id] ?? 1) - 1)
             extraFollowed.removeAll { $0 == id }
         }
         applyFollowFlags(id, value)
@@ -431,7 +465,7 @@ final class YoohooSession: ObservableObject {
 
     func publish(caption: String, tags: [String], photos: [String], video: Bool, image: UIImage?) {
         Task {
-            do { try await publishMedia(caption: caption, images: image.map { [$0] } ?? [], video: nil) }
+            do { try await publishMedia(caption: caption, tags: tags, images: image.map { [$0] } ?? [], video: nil) }
             catch { show(error.localizedDescription) }
         }
     }
@@ -469,10 +503,15 @@ final class YoohooSession: ObservableObject {
     func sendMessage(threadID: String, text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        lines.append(ChatLine(id: UUID().uuidString.lowercased(), threadID: threadID, text: trimmed, mine: true, stamp: ""))
+        let now = DateFormatter()
+        now.dateFormat = "HH:mm"
+        let clock = now.string(from: Date())
+        lines.append(ChatLine(id: UUID().uuidString.lowercased(), threadID: threadID, text: trimmed, mine: true, stamp: clock))
         if let index = people.firstIndex(where: { $0.id == threadID }) {
             people[index].preview = trimmed
-            people[index].time = "Now"
+            people[index].time = clock
+        } else if let known = known[threadID] {
+            people.append(ChatPerson(id: threadID, name: known.name, handle: known.handle, avatar: known.avatar, followed: followedIDs.contains(threadID), preview: trimmed, time: clock))
         }
         Task {
             guard let me = UUID(uuidString: meID) else { return }
@@ -492,6 +531,20 @@ final class YoohooSession: ObservableObject {
 
     func togglePersonFollow(_ id: String) {
         toggleFollow(id)
+    }
+
+    func spendAITokens() async -> Bool {
+        guard coins >= 5 else {
+            show("Not enough coins.")
+            return false
+        }
+        do {
+            coins = try await YoohooBackend.spendGems(5)
+            return true
+        } catch {
+            show(error.localizedDescription)
+            return false
+        }
     }
 
     func ensureChat(_ id: String) async {
@@ -585,6 +638,8 @@ final class YoohooSession: ObservableObject {
         localCover = nil
         localImages = [:]
         coins = 0
+        followingByUser = [:]
+        fansByUser = [:]
         avatarAsset = ""
         coverAsset = ""
         posts = []
@@ -605,7 +660,31 @@ final class YoohooSession: ObservableObject {
     }
 
     private func authorID(_ comment: CommentItem) -> String {
-        comment.mine ? meID : comment.author.lowercased()
+        if comment.userID.isEmpty == false { return comment.userID }
+        return comment.mine ? meID : ""
+    }
+
+    static func splitTags(_ body: String) -> (caption: String, tags: [String]) {
+        let pieces = body.split(whereSeparator: \.isWhitespace).map(String.init)
+        var tags: [String] = []
+        var words: [String] = []
+        for piece in pieces {
+            if piece.hasPrefix("#"), piece.count > 1 {
+                if tags.contains(piece) == false { tags.append(piece) }
+            } else {
+                words.append(piece)
+            }
+        }
+        return (words.joined(separator: " "), tags)
+    }
+
+    static func mergeTags(_ caption: String, _ tags: [String]) -> String {
+        let split = splitTags(caption)
+        var seen = split.tags
+        for tag in tags where seen.contains(tag) == false {
+            seen.append(tag)
+        }
+        return ([split.caption] + seen).filter { $0.isEmpty == false }.joined(separator: " ")
     }
 
     static let seedFollowed: Set<String> = ["elowen", "sorrel", "caspian", "eirik", "isolde", "maren", "saffira-list", "veyra", "kaelin"]

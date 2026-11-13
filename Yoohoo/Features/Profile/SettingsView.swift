@@ -66,6 +66,7 @@ struct SettingsView: View {
 
 struct PeopleListView: View {
     var kind: String
+    @EnvironmentObject private var nav: AppNavigator
     @EnvironmentObject private var session: YoohooSession
 
     private var rows: [ChatPerson] {
@@ -80,7 +81,8 @@ struct PeopleListView: View {
         SnowForm(title: kind == "Blacklist" ? "Followed" : kind) {
             ScrollView {
                 if rows.isEmpty {
-                    EmptyPenguin(message: "No more data").frame(height: 280)
+                    EmptyPenguin(message: "No more data")
+                        .frame(maxWidth: .infinity, minHeight: 520)
                 } else {
                     VStack(spacing: 16) {
                         ForEach(rows, id: \.id) { person in
@@ -95,18 +97,23 @@ struct PeopleListView: View {
 
     private func personRow(_ person: ChatPerson) -> some View {
         HStack(spacing: 8) {
-            UserImage(name: person.avatar)
-                .frame(width: 40, height: 40)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(YoohooColor.blue, lineWidth: avatarStroke(person.id))
-                )
-            VStack(alignment: .leading, spacing: 0) {
-                Text(person.name).font(YoohooFont.heavy(16)).foregroundStyle(YoohooColor.ink)
-                Text(person.handle).font(YoohooFont.medium(12)).foregroundStyle(YoohooColor.ink)
+            Button { nav.push(.profile(person.id)) } label: {
+                HStack(spacing: 8) {
+                    UserImage(name: person.avatar)
+                        .frame(width: 40, height: 40)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(YoohooColor.blue, lineWidth: avatarStroke(person.id))
+                        )
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(person.name).font(YoohooFont.heavy(16)).foregroundStyle(YoohooColor.ink)
+                        Text(person.handle).font(YoohooFont.medium(12)).foregroundStyle(YoohooColor.ink)
+                    }
+                    Spacer(minLength: 0)
+                }
             }
-            Spacer()
+            .buttonStyle(.plain)
             action(person.id)
         }
         .padding(.horizontal, 8)
@@ -162,8 +169,7 @@ struct FeedbackSheet: View {
     @State private var text = ""
 
     var body: some View {
-        VStack(spacing: 16) {
-            SnowSheetHeader(title: "Feed Back") { nav.sheet = nil }
+        SnowBottomSheet(title: "Feed Back", close: { nav.sheet = nil }) {
             ZStack(alignment: .topLeading) {
                 if text.isEmpty {
                     Text("Please enter...")
@@ -180,7 +186,7 @@ struct FeedbackSheet: View {
             .frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
             .background(RoundedRectangle(cornerRadius: 10).stroke(YoohooColor.blue, lineWidth: 1))
             .padding(.horizontal, 16)
-            SnowButton(title: "Submit", enabled: true) {
+            SnowButton(title: "Submit", enabled: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
                 let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !body.isEmpty, !session.busy else { return }
                 nav.sheet = nil
@@ -191,12 +197,6 @@ struct FeedbackSheet: View {
                     session.stopLoading()
                 }
             }
-            .padding(.bottom, 12)
         }
-        .frame(maxWidth: .infinity)
-        .background(
-            Color.white
-                .overlay(Rectangle().stroke(YoohooColor.yellow, lineWidth: 1).padding(.top, 70))
-        )
     }
 }

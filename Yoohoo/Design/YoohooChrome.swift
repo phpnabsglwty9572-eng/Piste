@@ -131,12 +131,15 @@ struct HeaderSky: View {
     var height: CGFloat = 177
 
     var body: some View {
-        Image("HeaderSky")
-            .resizable()
-            .scaledToFill()
-            .frame(width: 375, height: height * 8.188, alignment: .top)
-            .frame(width: 375, height: height, alignment: .top)
-            .clipped()
+        GeometryReader { geo in
+            Image("HeaderSky")
+                .resizable()
+                .scaledToFill()
+                .frame(width: geo.size.width, height: height, alignment: .top)
+                .clipped()
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
     }
 }
 
@@ -146,6 +149,60 @@ struct FieldMark: View {
             .resizable()
             .scaledToFit()
             .frame(width: 24, height: 24)
+    }
+}
+
+struct SnowBottomSheet<Leading: View, Content: View>: View {
+    var title: String
+    var close: () -> Void
+    @ViewBuilder var leading: () -> Leading
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: 46)
+            VStack(spacing: 16) {
+                ZStack {
+                    Text(title)
+                        .font(YoohooFont.title(20))
+                        .foregroundStyle(YoohooColor.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    HStack(spacing: 8) {
+                        leading()
+                        Spacer(minLength: 0)
+                        Button(action: close) {
+                            Image("CloseBadge").resizable().frame(width: 28, height: 28)
+                        }
+                        .buttonStyle(PressDownStyle())
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                content()
+            }
+            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity)
+            .background(
+                Color.white
+                    .overlay(Rectangle().stroke(YoohooColor.yellow, lineWidth: 1))
+            )
+        }
+        .overlay(alignment: .top) {
+            Image("SnowSheet")
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity)
+                .frame(height: 82)
+                .clipped()
+                .allowsHitTesting(false)
+        }
+    }
+}
+
+extension SnowBottomSheet where Leading == EmptyView {
+    init(title: String, close: @escaping () -> Void, @ViewBuilder content: @escaping () -> Content) {
+        self.init(title: title, close: close, leading: { EmptyView() }, content: content)
     }
 }
 

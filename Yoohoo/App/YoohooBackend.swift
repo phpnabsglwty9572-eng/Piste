@@ -36,7 +36,7 @@ enum YoohooBackend {
         let postIDs = posts.map(\.id)
         let comments: [CommentRow] = postIDs.isEmpty ? [] : try await client.from("comments").select().in("post_id", values: postIDs).order("created_at", ascending: true).execute().value
         let rooms: [RoomRow] = ids.isEmpty ? [] : try await client.from("rooms").select().in("owner_id", values: ids).order("created_at", ascending: false).execute().value
-        let follows: [FollowRow] = try await client.from("follows").select().or("follower.eq.\(me.uuidString),followee.eq.\(me.uuidString)").execute().value
+        let follows: [FollowRow] = try await client.from("follows").select().execute().value
         let blocks: [BlockRow] = try await client.from("blocks").select().eq("blocker", value: me).execute().value
         let likes: [LikeRow] = try await client.from("post_likes").select().eq("user_id", value: me).execute().value
         let threads: [ThreadRow] = try await client.from("threads").select().or("user_low.eq.\(me.uuidString),user_high.eq.\(me.uuidString)").execute().value
@@ -126,6 +126,10 @@ enum YoohooBackend {
         try await client.from("room_messages").insert(RoomMessageWrite(roomID: room, senderID: sender, body: body)).execute()
     }
 
+    static func roomGifts(_ room: UUID) async throws -> [RoomGiftRow] {
+        try await client.from("room_gifts").select().eq("room_id", value: room).order("created_at", ascending: true).execute().value
+    }
+
     static func sendGift(room: UUID, cost: Int, label: String) async throws -> Int {
         try await client.rpc("send_gift", params: GiftParams(pRoom: room, pCost: cost, pLabel: label)).execute().value
     }
@@ -150,6 +154,10 @@ enum YoohooBackend {
     static func addAI(mine: Bool, body: String) async throws {
         guard let me = userID else { return }
         try await client.from("ai_messages").insert(AIWrite(userID: me, mine: mine, body: body)).execute()
+    }
+
+    static func spendGems(_ amount: Int) async throws -> Int {
+        try await client.rpc("spend_gems", params: SpendParams(pAmount: amount)).execute().value
     }
 
     static func deleteAccount() async throws {
@@ -261,10 +269,12 @@ struct MessageRow: Decodable {
     var threadID: UUID
     var senderID: UUID
     var body: String
+    var createdAt: String?
     enum CodingKeys: String, CodingKey {
         case id, body
         case threadID = "thread_id"
         case senderID = "sender_id"
+        case createdAt = "created_at"
     }
 }
 struct RoomMessageRow: Decodable, Identifiable {
@@ -272,6 +282,16 @@ struct RoomMessageRow: Decodable, Identifiable {
     var senderID: UUID
     var body: String
     enum CodingKeys: String, CodingKey { case id, body; case senderID = "sender_id" }
+}
+
+struct RoomGiftRow: Decodable, Identifiable {
+    var id: UUID
+    var senderID: UUID
+    var label: String
+    enum CodingKeys: String, CodingKey {
+        case id, label
+        case senderID = "sender_id"
+    }
 }
 
 struct FollowRow: Decodable { var follower: UUID; var followee: UUID }
@@ -347,14 +367,38 @@ struct UserImage: View {
                 case .success(let image):
                     image.resizable().scaledToFill()
                 default:
-                    Color.white.opacity(0.35)
+                    ImageShimmer()
                 }
             }
         } else if name.isEmpty {
-            Color.white.opacity(0.35)
+            ImageShimmer()
         } else {
             Image(name).resizable().scaledToFill()
         }
+    }
+}
+
+struct ImageShimmer: View {
+    @State private var shine = false
+
+    var body: some View {
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.35),
+                        Color.white.opacity(0.7),
+                        Color.white.opacity(0.35)
+                    ],
+                    startPoint: shine ? .leading : .trailing,
+                    endPoint: shine ? .trailing : .leading
+                )
+            )
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    shine = true
+                }
+            }
     }
 }
 
@@ -374,4 +418,9 @@ struct CreditParams: Encodable {
     var pTx: String
     var pProduct: String
     enum CodingKeys: String, CodingKey { case pTx = "p_tx"; case pProduct = "p_product" }
+}
+
+struct SpendParams: Encodable {
+    var pAmount: Int
+    enum CodingKeys: String, CodingKey { case pAmount = "p_amount" }
 }

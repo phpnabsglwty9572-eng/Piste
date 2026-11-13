@@ -83,6 +83,7 @@ struct VideoCallView: View {
         }
         .background(NavigationGestureRelay())
         .navigationBarHidden(true)
+        .preferredColorScheme(.dark)
         .onAppear { tone.start() }
         .onDisappear { tone.stop() }
     }

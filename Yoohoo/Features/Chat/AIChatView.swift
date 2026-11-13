@@ -166,6 +166,7 @@ struct AIChatView: View {
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             Spacer(minLength: 0)
             composer
@@ -337,10 +338,17 @@ struct AIChatView: View {
         draft = ""
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
-        lines.append(AILine(mine: true, text: text, stamp: lines.isEmpty ? formatter.string(from: Date()) : nil))
+        let user = AILine(mine: true, text: text, stamp: lines.isEmpty ? formatter.string(from: Date()) : nil)
+        lines.append(user)
         thinking = true
         let reply = answer(for: text)
         Task {
+            let paid = await session.spendAITokens()
+            if paid == false {
+                lines.removeAll { $0.id == user.id }
+                thinking = false
+                return
+            }
             try? await YoohooBackend.addAI(mine: true, body: text)
             try? await Task.sleep(nanoseconds: 700_000_000)
             thinking = false

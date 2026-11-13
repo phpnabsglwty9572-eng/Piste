@@ -12,10 +12,34 @@ struct RootView: View {
             case .auth, .main:
                 stack
             }
-            if session.busy {
+            if session.busy, session.blocksInput {
                 Color.clear
                     .contentShape(Rectangle())
                     .ignoresSafeArea()
+            }
+            if let preview = nav.mediaPreview {
+                ZStack {
+                    Color.black.ignoresSafeArea()
+                    Group {
+                        if preview.hasPrefix("http"), let url = URL(string: preview) {
+                            AsyncImage(url: url) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image.resizable().scaledToFit()
+                                default:
+                                    ImageShimmer()
+                                }
+                            }
+                        } else if let local = session.localImages[preview] {
+                            Image(uiImage: local).resizable().scaledToFit()
+                        } else if preview.isEmpty == false {
+                            Image(preview).resizable().scaledToFit()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { nav.mediaPreview = nil }
             }
             if let toast = session.toast {
                 YoohooToast(text: toast, spinning: session.toastSpinning)
@@ -30,15 +54,17 @@ struct RootView: View {
             }
         }
         .overlay {
-            if let sheet = nav.sheet, !sheet.usesSystemSheet {
-                ZStack(alignment: .bottom) {
+            ZStack(alignment: .bottom) {
+                if let sheet = nav.sheet, !sheet.usesSystemSheet {
                     Color.black.opacity(0.5)
                         .ignoresSafeArea()
+                        .transition(.opacity)
                         .onTapGesture { nav.sheet = nil }
                     sheetCard(sheet)
                         .transition(.move(edge: .bottom))
                 }
             }
+            .animation(.easeOut(duration: 0.22), value: nav.sheet?.id)
         }
     }
 
@@ -46,14 +72,22 @@ struct RootView: View {
         NavigationStack(path: $nav.path) {
             Group {
                 if nav.stage == .main {
-                    switch nav.tab {
-                    case .home:
-                        HomeView()
-                    case .post:
-                        PostFeedView()
-                    case .chat:
-                        ChatListView()
+                    Group {
+                        switch nav.tab {
+                        case .home:
+                            HomeView()
+                        case .post:
+                            PostFeedView()
+                        case .chat:
+                            ChatListView()
+                        }
                     }
+                    .id(nav.tab)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                    ))
+                    .animation(.easeInOut(duration: 0.25), value: nav.tab)
                 } else {
                     AuthLandingView()
                 }
@@ -77,9 +111,9 @@ struct RootView: View {
         case .signIn:
             AccountFormView(mode: .signIn)
         case .terms:
-            LegalPage(title: "User Agreement", resource: "Terms")
+            LegalPage(title: "Terms Of Use", resource: "EULA", remote: YoohooConfig.termsURL)
         case .privacy:
-            LegalPage(title: "Privacy Policy", resource: "Privacy")
+            LegalPage(title: "Privacy Policy", resource: "Privacy", remote: YoohooConfig.privacyURL)
         case .postDetail(let id):
             PostDetailView(postID: id)
         case .compose:
@@ -132,14 +166,14 @@ struct RootView: View {
                 },
                 close: { nav.sheet = nil }
             )
-        case .deleteChat(let id):
+        case .deleteChat(let id, let pop):
             ConfirmSnowSheet(
                 title: "Delete Chat",
                 message: "Are you sure you want to delete your chat history? Once deleted, this action cannot be reversed!",
                 confirm: {
                     session.deleteThread(id)
                     nav.sheet = nil
-                    nav.pop()
+                    if pop { nav.pop() }
                 },
                 close: { nav.sheet = nil }
             )
