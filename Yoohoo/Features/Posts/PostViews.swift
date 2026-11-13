@@ -42,16 +42,17 @@ struct PostFeedView: View {
                     .foregroundStyle(YoohooColor.ink)
                 Spacer(minLength: 0)
                 Button { nav.push(.compose) } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 2) {
                         Image("PostBadge").resizable().scaledToFill().frame(width: 28, height: 28).clipShape(RoundedRectangle(cornerRadius: 8))
                         Text("POST")
                             .font(YoohooFont.title(20))
                             .foregroundStyle(YoohooColor.blue)
                             .shadow(color: Color(red: 196 / 255, green: 219 / 255, blue: 1), radius: 0, y: 2)
-                        Image("Pencil").resizable().frame(width: 18, height: 18)
+                            .fixedSize()
+                        Image("Pencil").resizable().frame(width: 22, height: 22)
                     }
-                    .padding(.leading, 4)
-                    .padding(.trailing, 8)
+                    .padding(.leading, 3)
+                    .padding(.trailing, 6)
                     .frame(height: 34)
                     .background(RoundedRectangle(cornerRadius: 12).fill(.white).overlay(RoundedRectangle(cornerRadius: 12).stroke(YoohooColor.blue, lineWidth: 1)))
                 }
@@ -70,13 +71,10 @@ struct PostFeedView: View {
     }
 
     private var filterRow: some View {
-        HStack(spacing: 14) {
+        SnowFilterBar {
             SnowChoice(title: "Popular", selected: filter == .popular) { filter = .popular }
             SnowChoice(title: "Followed", selected: filter == .followed) { filter = .followed }
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
-        .background(alignment: .bottom) { SnowEdge() }
     }
 
     private var sheet: some View {
@@ -92,6 +90,7 @@ struct PostFeedView: View {
                     }
                     .padding(.top, 16)
                     .padding(.bottom, 24)
+                    .frame(maxWidth: .infinity)
                 }
             }
         }
@@ -106,6 +105,7 @@ struct PostFeedView: View {
 struct SnowChoice: View {
     var title: String
     var selected: Bool
+    var width: CGFloat = 160
     var action: () -> Void
 
     var body: some View {
@@ -141,10 +141,32 @@ struct SnowChoice: View {
                     .font(YoohooFont.heavy(20))
                     .foregroundStyle(.white)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 51)
+            .frame(width: width, height: 51)
         }
         .buttonStyle(PressDownStyle())
+    }
+}
+
+struct SnowFilterBar<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        HStack {
+            Spacer(minLength: 0)
+            HStack(spacing: 18, content: content)
+            Spacer(minLength: 0)
+        }
+        .padding(.bottom, 8)
+        .background(alignment: .bottom) { SnowEdge() }
+        .overlay(alignment: .bottomTrailing) {
+            Image("HeaderSled")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 32, height: 32)
+                .padding(.trailing, 16)
+                .offset(y: -19)
+                .allowsHitTesting(false)
+        }
     }
 }
 
@@ -161,7 +183,7 @@ struct EmptyPenguin: View {
                 .frame(width: 93, height: 93)
             HStack(spacing: 5) {
                 ForEach(0..<3, id: \.self) { index in
-                    Circle()
+                    RoundedRectangle(cornerRadius: 2)
                         .fill(Color(red: 243 / 255, green: 34 / 255, blue: 42 / 255))
                         .frame(width: 5, height: 5)
                         .opacity(animate && dot != index ? 0.35 : 1)
@@ -216,7 +238,8 @@ struct PostCard: View {
             }
             .padding(.top, 4)
         }
-        .padding(.horizontal, 16)
+        .frame(width: 343)
+        .frame(maxWidth: .infinity)
     }
 
     private var media: some View {
@@ -251,8 +274,8 @@ struct PostCard: View {
             if showsActions && post.pageCount > 1 {
                 HStack(spacing: 5) {
                     ForEach(0..<post.pageCount, id: \.self) { index in
-                        Circle()
-                            .fill(index == page ? YoohooColor.pink : Color(white: 0.8))
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(index == page ? YoohooColor.pink : Color(white: 204 / 255))
                             .frame(width: 5, height: 5)
                     }
                 }
@@ -358,7 +381,7 @@ struct PostDetailView: View {
         }
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 8) {
-                if let post, !post.mine {
+                if let post {
                     Button { session.toggleLike(post.id) } label: {
                         Image(post.liked ? "LikeOnGlyph" : "LikeGlyph").resizable().frame(width: 34, height: 34)
                     }
@@ -383,7 +406,7 @@ struct PostDetailView: View {
             .padding(.horizontal, 16)
             let lines = session.comments(for: post.id)
             if lines.isEmpty {
-                EmptyPenguin(message: "", animate: false).frame(height: 180)
+                EmptyPenguin(message: "", animate: false).frame(height: 140)
             } else {
                 ForEach(lines) { line in
                     commentRow(line)
@@ -488,7 +511,7 @@ struct ComposePostView: View {
     @State private var images: [UIImage] = []
     @State private var videoPicked = false
     @State private var caption = ""
-    @State private var tags: [String] = []
+    @State private var tags: [String] = ["#Skiing", "#Exercise"]
     @State private var picker: PhotosPickerItem?
     @State private var showTags = false
     @State private var tagDraft = ""
@@ -500,33 +523,55 @@ struct ComposePostView: View {
 
     var body: some View {
         ZStack {
-            SnowForm(title: "Create post") {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 14) {
-                        SnowChoice(title: "Image", selected: !videoMode) { videoMode = false }
-                        SnowChoice(title: "Video", selected: videoMode) { videoMode = true }
-                    }
-                    fieldTitle(videoMode ? "Video" : "Image")
-                    mediaRow
-                    fieldTitle("Content")
-                    TextField("Please enter...", text: $caption, axis: .vertical)
-                        .font(YoohooFont.medium(14))
-                        .lineLimit(4, reservesSpace: true)
-                        .padding(8)
-                        .frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
-                        .background(RoundedRectangle(cornerRadius: 10).stroke(YoohooColor.blue, lineWidth: 1))
-                    fieldTitle("Label")
-                    tagRow
+            Color.white.ignoresSafeArea()
+            VStack(spacing: 0) {
+                composeHeader
+                SnowFilterBar {
+                    SnowChoice(title: "Image", selected: !videoMode) { videoMode = false }
+                    SnowChoice(title: "Video", selected: videoMode) { videoMode = true }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                Spacer(minLength: 16)
-                SnowButton(title: "Release", enabled: ready, action: release)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            fieldTitle(videoMode ? "Video" : "Image")
+                            mediaRow
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            fieldTitle("Content")
+                            ZStack(alignment: .topLeading) {
+                                if caption.isEmpty {
+                                    Text("Please enter...")
+                                        .font(YoohooFont.medium(14))
+                                        .foregroundStyle(YoohooColor.gray)
+                                        .padding(8)
+                                }
+                                TextField("", text: $caption, axis: .vertical)
+                                    .font(YoohooFont.medium(14))
+                                    .foregroundStyle(YoohooColor.ink)
+                                    .lineLimit(4, reservesSpace: true)
+                                    .padding(8)
+                            }
+                            .frame(width: 343, height: 100, alignment: .topLeading)
+                            .background(RoundedRectangle(cornerRadius: 10).stroke(YoohooColor.blue, lineWidth: 1))
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            fieldTitle("Label")
+                            tagRow
+                        }
+                        SnowButton(title: "Release", enabled: ready, action: release)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .frame(width: 343)
                     .frame(maxWidth: .infinity)
-                    .padding(.bottom, 16)
+                    .padding(.top, 16)
+                    .padding(.bottom, 24)
+                }
+                .background(Color.white)
             }
             if showTags { tagSheet }
         }
+        .background(NavigationGestureRelay())
+        .navigationBarHidden(true)
         .onChange(of: picker) { item in
             guard let item else { return }
             Task {
@@ -538,6 +583,31 @@ struct ComposePostView: View {
                 }
                 picker = nil
             }
+        }
+    }
+
+    private var composeHeader: some View {
+        ZStack(alignment: .bottom) {
+            Color.clear
+            HStack(spacing: 8) {
+                Button { nav.pop() } label: {
+                    Image("BackButton").resizable().frame(width: 34, height: 34)
+                }
+                .buttonStyle(PressDownStyle())
+                Text("Create post")
+                    .font(YoohooFont.title(20))
+                    .foregroundStyle(YoohooColor.ink)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 18)
+        }
+        .frame(height: 72)
+        .background(alignment: .top) {
+            HeaderSky(height: 220)
+                .frame(maxWidth: .infinity)
+                .frame(height: 160, alignment: .top)
+                .ignoresSafeArea(edges: .top)
         }
     }
 
@@ -621,7 +691,10 @@ struct ComposePostView: View {
                 .padding(.bottom, 12)
             }
             .frame(maxWidth: .infinity)
-            .background(Color.white)
+            .background(
+                Color.white
+                    .overlay(Rectangle().stroke(YoohooColor.yellow, lineWidth: 1).padding(.top, 70))
+            )
         }
     }
 
@@ -703,6 +776,7 @@ struct AboutSheet: View {
             .padding(.bottom, 24)
             .frame(maxWidth: .infinity)
             .background(Color.white)
+            .overlay(Rectangle().stroke(YoohooColor.yellow, lineWidth: 1).padding(.top, 59))
         }
         .overlay(alignment: .top) {
             Image("SnowSheet")
@@ -852,6 +926,9 @@ struct ConfirmSnowSheet: View {
                 .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity)
-        .background(Color.white)
+        .background(
+            Color.white
+                .overlay(Rectangle().stroke(YoohooColor.yellow, lineWidth: 1).padding(.top, 70))
+        )
     }
 }

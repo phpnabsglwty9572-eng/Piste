@@ -33,8 +33,7 @@ struct AuthLandingView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let scale = max(geo.size.width / 375, geo.size.height / 667)
-            ZStack {
+            ZStack(alignment: .top) {
                 AuthSkyFill()
                 VStack(spacing: 0) {
                     Color.clear.frame(height: 120)
@@ -48,9 +47,8 @@ struct AuthLandingView: View {
                     Color.clear.frame(height: 73)
                     legalLine
                 }
-                .frame(width: 375, height: 667, alignment: .top)
-                .scaleEffect(scale)
-                .frame(width: geo.size.width, height: geo.size.height)
+                .frame(width: 375, alignment: .top)
+                .frame(width: geo.size.width, alignment: .top)
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
@@ -108,7 +106,8 @@ struct AuthLandingView: View {
         .buttonStyle(.plain)
         .tint(YoohooColor.ink)
         .lineLimit(1)
-        .frame(maxWidth: .infinity)
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(width: 375)
     }
 
     private func gate(_ work: @escaping () -> Void) {

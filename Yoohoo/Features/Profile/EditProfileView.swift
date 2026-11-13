@@ -67,7 +67,7 @@ struct EditProfileView: View {
 
     private func label(_ title: String) -> some View {
         HStack(spacing: 2) {
-            Image("ChatBell").resizable().scaledToFit().frame(width: 24, height: 24)
+            FieldMark()
             Text(title).font(YoohooFont.title(16)).foregroundStyle(YoohooColor.ink)
         }
     }
@@ -161,12 +161,13 @@ struct CoinShopView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     banner
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 13), GridItem(.flexible(), spacing: 13)], spacing: 32) {
+                    LazyVGrid(columns: [GridItem(.fixed(165), spacing: 13), GridItem(.fixed(165), spacing: 13)], spacing: 32) {
                         ForEach(packs) { pack in
                             packCard(pack)
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .frame(width: 343)
+                    .frame(maxWidth: .infinity)
                     .padding(.top, 16)
                     .padding(.bottom, 24)
                 }
@@ -204,7 +205,7 @@ struct CoinShopView: View {
                             .foregroundStyle(YoohooColor.ink)
                         Image("CoinPlus").resizable().frame(width: 24, height: 24)
                     }
-                    .frame(height: 28)
+                    .frame(width: 88, height: 28)
                     .padding(.horizontal, 2)
                     .background(RoundedRectangle(cornerRadius: 8).fill(.white))
                 }
@@ -213,6 +214,14 @@ struct CoinShopView: View {
                 Spacer()
             }
             VStack { Spacer(); SnowEdge() }
+            Image("HeaderSled")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 32, height: 32)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(.trailing, 16)
+                .padding(.bottom, 8)
+                .allowsHitTesting(false)
         }
         .frame(height: 190)
     }
@@ -247,7 +256,7 @@ struct CoinShopView: View {
             .buttonStyle(PressDownStyle())
             .padding(.bottom, 6)
         }
-        .frame(height: 150)
+        .frame(width: 165, height: 150)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(.white)

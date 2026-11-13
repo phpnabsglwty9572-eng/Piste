@@ -8,19 +8,15 @@ struct SettingsView: View {
     var body: some View {
         SnowForm(title: "Settings") {
             VStack(spacing: 16) {
-                VStack(spacing: 16) {
-                    row("SetFollow", "Follow", nil, plain: false) { nav.push(.people("Followed")) }
-                    row("SetFans", "Fans", nil, plain: false) { nav.push(.people("Fans")) }
-                    row("SetBlack", "Blacklist", nil, plain: true) { nav.push(.people("Blacklist")) }
-                    row("SetFeedback", "Feedback", nil, plain: false) { nav.sheet = .feedback }
-                    row("SetTerms", "Terms Of Use", nil, plain: false) { nav.push(.terms) }
-                }
-                VStack(spacing: 16) {
-                    row("SetPrivacy", "Privacy Policy", nil, plain: false) { nav.push(.privacy) }
-                    row("SetVersion", "Version", "V1.1", plain: false) {}
-                    row("SetCache", "Clean Cache", cache, plain: false) { clean() }
-                    row("SetTrash", "Delete Account", nil, plain: false) { nav.sheet = .deleteAccount }
-                }
+                row("SetFollow", "Follow", nil, plain: false) { nav.push(.people("Followed")) }
+                row("SetFans", "Fans", nil, plain: false) { nav.push(.people("Fans")) }
+                row("SetBlack", "Blacklist", nil, plain: true) { nav.push(.people("Blacklist")) }
+                row("SetFeedback", "Feedback", nil, plain: false) { nav.sheet = .feedback }
+                row("SetTerms", "Terms Of Use", nil, plain: false) { nav.push(.terms) }
+                row("SetPrivacy", "Privacy Policy", nil, plain: false) { nav.push(.privacy) }
+                row("SetVersion", "Version", "V1.1", plain: false) {}
+                row("SetCache", "Clean Cache", cache, plain: false) { clean() }
+                row("SetTrash", "Delete Account", nil, plain: false) { nav.sheet = .deleteAccount }
                 Spacer(minLength: 12)
                 SnowButton(title: "Log Out", enabled: true) { nav.sheet = .logout }
                     .padding(.bottom, 16)
@@ -81,7 +77,7 @@ struct PeopleListView: View {
     }
 
     var body: some View {
-        SnowForm(title: kind == "Followed" ? "Followed" : kind) {
+        SnowForm(title: kind == "Blacklist" ? "Followed" : kind) {
             ScrollView {
                 if rows.isEmpty {
                     EmptyPenguin(message: "No more data").frame(height: 280)
@@ -198,6 +194,9 @@ struct FeedbackSheet: View {
             .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity)
-        .background(Color.white)
+        .background(
+            Color.white
+                .overlay(Rectangle().stroke(YoohooColor.yellow, lineWidth: 1).padding(.top, 70))
+        )
     }
 }

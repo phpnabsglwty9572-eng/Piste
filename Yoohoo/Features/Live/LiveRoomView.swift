@@ -41,7 +41,7 @@ struct LiveRoomView: View {
                                 lineBubble(line).id(line.id)
                             }
                         }
-                        .frame(maxWidth: .infinity, minHeight: 260, alignment: .bottom)
+                        .frame(maxWidth: .infinity, minHeight: 260, alignment: .bottomLeading)
                     }
                     .onChange(of: lines.count) { _ in
                         if let last = lines.last {
@@ -199,6 +199,7 @@ struct LiveRoomView: View {
             }
         }
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(white: 44 / 255).opacity(0.5)))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var inputBar: some View {
@@ -213,8 +214,7 @@ struct LiveRoomView: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.leading, 8)
-                .frame(maxWidth: 205)
-                .frame(height: 38)
+                .frame(width: 205, height: 38, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color(white: 44 / 255).opacity(0.5))
@@ -223,6 +223,7 @@ struct LiveRoomView: View {
             }
             .buttonStyle(PressDownStyle())
             .layoutPriority(1)
+            Spacer(minLength: 8)
             liveIconButton("LiveGift", filled: true) { showGifts = true }
             liveIconButton("MoreCircle", filled: false) { nav.sheet = .about(.person(ownerID)) }
             ShareLink(item: "\(hostName) is live") {
@@ -404,7 +405,7 @@ struct LiveGiftShop: View {
             Color.clear.frame(height: 59)
             VStack(spacing: 16) {
                 Color.clear.frame(height: 63)
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 4), spacing: 16) {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(82), spacing: 5), count: 4), spacing: 16) {
                     ForEach(gifts.indices, id: \.self) { index in
                         giftCard(index)
                     }
@@ -415,6 +416,7 @@ struct LiveGiftShop: View {
             .padding(.bottom, 24)
             .frame(maxWidth: .infinity)
             .background(Color.white)
+            .overlay(Rectangle().stroke(YoohooColor.yellow, lineWidth: 1).padding(.top, 59))
         }
         .overlay(alignment: .top) {
             Image("SnowSheet")
@@ -472,8 +474,7 @@ struct LiveGiftShop: View {
                         .foregroundStyle(YoohooColor.ink)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 97)
+            .frame(width: 82, height: 97)
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Color(red: 1, green: 252 / 255, blue: 226 / 255))
@@ -525,6 +526,7 @@ struct LiveAudienceSheet: View {
             .padding(.bottom, 24)
             .frame(maxWidth: .infinity)
             .background(Color.white)
+            .overlay(Rectangle().stroke(YoohooColor.yellow, lineWidth: 1).padding(.top, 59))
         }
         .overlay(alignment: .top) {
             Image("SnowSheet")

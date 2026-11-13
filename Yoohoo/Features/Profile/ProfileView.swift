@@ -49,6 +49,14 @@ struct ProfileView: View {
             }
             .frame(height: 300)
             .allowsHitTesting(false)
+            Image("HeaderSled")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 32, height: 32)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(.trailing, 16)
+                .padding(.bottom, 8)
+                .allowsHitTesting(false)
             HStack {
                 Button(action: nav.pop) {
                     Image("BackButton").resizable().frame(width: 34, height: 34)
@@ -62,7 +70,7 @@ struct ProfileView: View {
                     .buttonStyle(PressDownStyle())
                 } else {
                     Button { nav.sheet = .about(.person(userID)) } label: {
-                        Image("MoreDots").resizable().frame(width: 34, height: 34)
+                        Image("MoreCircle").resizable().frame(width: 34, height: 34)
                     }
                     .buttonStyle(PressDownStyle())
                 }
@@ -237,11 +245,12 @@ struct ProfileView: View {
     }
 
     private var filters: some View {
-        HStack(spacing: 12) {
-            SnowChoice(title: "Post", selected: !likes) { likes = false }
-            SnowChoice(title: "Like", selected: likes) { likes = true }
+        HStack(spacing: 13) {
+            SnowChoice(title: "Post", selected: !likes, width: 165) { likes = false }
+            SnowChoice(title: "Like", selected: likes, width: 165) { likes = true }
         }
-        .padding(.horizontal, 16)
+        .frame(width: 343)
+        .frame(maxWidth: .infinity)
     }
 
     private var posts: some View {

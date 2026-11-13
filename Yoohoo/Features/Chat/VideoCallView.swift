@@ -59,7 +59,7 @@ struct VideoCallView: View {
                 .scaledToFill()
                 .ignoresSafeArea()
             Color.black.opacity(0.5).ignoresSafeArea()
-            VStack(spacing: 6) {
+            VStack(spacing: 0) {
                 Spacer()
                 Text(name)
                     .font(YoohooFont.heavy(18))
@@ -67,6 +67,7 @@ struct VideoCallView: View {
                 Text("Video Call...")
                     .font(YoohooFont.medium(14))
                     .foregroundStyle(.white)
+                    .padding(.top, 6)
                 Button {
                     tone.stop()
                     nav.pop()
@@ -77,7 +78,7 @@ struct VideoCallView: View {
                 }
                 .buttonStyle(PressDownStyle())
                 .padding(.top, 8)
-                .padding(.bottom, 28)
+                .padding(.bottom, 56)
             }
         }
         .background(NavigationGestureRelay())

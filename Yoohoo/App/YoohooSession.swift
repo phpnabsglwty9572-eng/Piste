@@ -124,6 +124,7 @@ final class YoohooSession: ObservableObject {
     @Published var extraFollowed: [String] = []
     @Published var blocked: [String] = []
     @Published var people: [ChatPerson] = []
+    @Published var contacts: [ChatPerson] = []
     @Published var lines: [ChatLine] = []
     @Published var cards: [FeedCard] = []
     @Published var posts: [PostItem] = []
@@ -325,6 +326,11 @@ final class YoohooSession: ObservableObject {
         }
         threadForUser = threads
         people = chatPeople
+        contacts = library.profiles.compactMap { profile in
+            let id = profile.id.uuidString.lowercased()
+            guard id != me, blocked.contains(id) == false else { return nil }
+            return ChatPerson(id: id, name: profile.name, handle: profile.handle, avatar: profile.avatarURL ?? "", followed: following.contains(id), preview: "", time: "")
+        }
         lines = chatLines
         followedPeople = following.compactMap { person($0, profiles) }
         fanPeople = library.follows.filter { $0.followee.uuidString.lowercased() == me }.map { $0.follower.uuidString.lowercased() }.compactMap { person($0, profiles) }
@@ -585,6 +591,7 @@ final class YoohooSession: ObservableObject {
         comments = []
         cards = []
         people = []
+        contacts = []
         lines = []
         followedIDs = []
         extraFollowed = []

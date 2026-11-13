@@ -63,7 +63,7 @@ struct ChatListView: View {
         }
         .padding(.leading, 2)
         .padding(.trailing, 2)
-        .frame(height: 28)
+        .frame(width: 88, height: 28)
         .background(RoundedRectangle(cornerRadius: 8).fill(.white))
     }
 
@@ -71,7 +71,7 @@ struct ChatListView: View {
         VStack(alignment: .leading, spacing: 12) {
             peopleRow
             HStack(spacing: 2) {
-                Image("ChatBell").resizable().scaledToFit().frame(width: 24, height: 24)
+                FieldMark()
                 Text("All Chat").font(YoohooFont.title(16)).foregroundStyle(YoohooColor.ink)
             }
             .padding(.horizontal, 16)
@@ -88,16 +88,25 @@ struct ChatListView: View {
                 }
             }
         }
-        .padding(.top, 12)
+        .padding(.top, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(alignment: .top) { SnowEdge() }
+        .overlay(alignment: .topTrailing) {
+            Image("HeaderSled")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 32, height: 32)
+                .padding(.trailing, 16)
+                .offset(y: -32)
+                .allowsHitTesting(false)
+        }
         .background(Color.white)
     }
 
     private var peopleRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(session.people.filter { !session.blocked.contains($0.id) }) { person in
+                ForEach(session.contacts) { person in
                     Button { nav.push(.chat(person.id)) } label: {
                         personCard(person)
                     }
@@ -118,8 +127,10 @@ struct ChatListView: View {
                 Image(person.followed ? "VerifyBadge" : "BadgePlus")
                     .resizable()
                     .scaledToFit()
+                    .frame(width: 14, height: 14)
                     .frame(width: 16, height: 16)
-                    .background(Circle().fill(.white))
+                    .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(YoohooColor.pink, lineWidth: 1))
                     .onTapGesture {
                         session.togglePersonFollow(person.id)
                     }
@@ -147,7 +158,7 @@ struct ChatListView: View {
                 Spacer(minLength: 8)
                 Text(person.time)
                     .font(YoohooFont.medium(10))
-                    .foregroundStyle(Color(white: 0.47))
+                    .foregroundStyle(Color(red: 121 / 255, green: 121 / 255, blue: 121 / 255))
             }
             .padding(.horizontal, 16)
         }
@@ -181,8 +192,7 @@ struct ChatThreadView: View {
         .overlay(alignment: .topTrailing) {
             if let person {
                 authorChip(person)
-                    .padding(.trailing, 0)
-                    .padding(.top, 28)
+                    .padding(.top, 16)
             }
         }
     }
@@ -251,12 +261,21 @@ struct ChatThreadView: View {
         HStack(spacing: 8) {
             HStack(spacing: 8) {
                 Image("CommentSend").resizable().frame(width: 22, height: 22)
-                TextField("Please enter...", text: $draft)
-                    .font(YoohooFont.medium(12))
-                    .onSubmit(send)
+                ZStack(alignment: .leading) {
+                    if draft.isEmpty {
+                        Text("Please enter...")
+                            .font(YoohooFont.medium(12))
+                            .foregroundStyle(YoohooColor.gray)
+                    }
+                    TextField("", text: $draft)
+                        .font(YoohooFont.medium(12))
+                        .foregroundStyle(YoohooColor.ink)
+                        .onSubmit(send)
+                }
             }
-            .padding(.horizontal, 8)
-            .frame(height: 38)
+            .padding(.leading, 8)
+            .padding(.trailing, 8)
+            .frame(width: 251, height: 38)
             .background(RoundedRectangle(cornerRadius: 12).stroke(YoohooColor.pink, lineWidth: 1))
             Button {
                 let person = session.people.first { $0.id == threadID }
@@ -272,7 +291,8 @@ struct ChatThreadView: View {
             }
             .buttonStyle(PressDownStyle())
         }
-        .padding(.horizontal, 16)
+        .frame(width: 343)
+        .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
         .background(Color.white)
     }

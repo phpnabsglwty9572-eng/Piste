@@ -24,69 +24,73 @@ struct AIChatView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            VStack(spacing: 0) {
-                header
-                sheet
+            Color.white.ignoresSafeArea()
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    header(width: geo.size.width)
+                    sheet
+                }
             }
         }
-        .background(Color.white)
         .background(NavigationGestureRelay())
         .navigationBarHidden(true)
         .task { await loadHistory() }
     }
 
-    private var header: some View {
+    private func header(width: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
             Image("HomeSky")
                 .resizable()
-                .frame(width: 375, height: 260 * 2.4038)
-                .offset(y: -260 * 0.2769)
-                .frame(width: 375, height: 260, alignment: .topLeading)
+                .scaledToFill()
+                .frame(width: width, height: 260, alignment: .top)
                 .clipped()
             Image("SnowCap")
                 .resizable()
                 .scaledToFill()
-                .frame(width: 375, height: 83)
+                .frame(width: width, height: 83)
                 .clipped()
-            Image("FlakeA").resizable().frame(width: 25, height: 25).offset(x: 50, y: 194)
-            Image("FlakeB").resizable().frame(width: 25, height: 25).offset(x: 233, y: 167)
-            Image("FlakeA")
-                .resizable()
-                .scaledToFill()
-                .frame(width: 19 * 1.5789, height: 30)
-                .offset(x: 19 * -0.5789)
-                .frame(width: 19, height: 30, alignment: .topLeading)
-                .clipped()
-                .scaleEffect(x: -1, y: -1)
-                .offset(x: 356, y: 61)
             ZStack(alignment: .topLeading) {
-                Text("Glide into winter with Pegu")
-                    .font(YoohooFont.display(20))
-                    .foregroundStyle(.white)
-                    .shadow(color: YoohooColor.titleShadow, radius: 0, y: 3)
-                    .lineLimit(1)
-                    .offset(y: 80)
-                Text("Fresh snow, cool goggles and endless fun. Let this tiny skier bring warmth and joy to your snowy days.")
-                    .font(YoohooFont.body(14))
-                    .foregroundStyle(.white)
-                    .frame(width: 253, alignment: .leading)
-                    .offset(y: 118)
+                Image("FlakeA").resizable().frame(width: 25, height: 25).offset(x: 50, y: 194)
+                Image("FlakeB").resizable().frame(width: 25, height: 25).offset(x: 233, y: 167)
+                Image("FlakeA")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 19 * 1.5789, height: 30)
+                    .offset(x: 19 * -0.5789)
+                    .frame(width: 19, height: 30, alignment: .topLeading)
+                    .clipped()
+                    .scaleEffect(x: -1, y: -1)
+                    .offset(x: 356, y: 61)
+                ZStack(alignment: .topLeading) {
+                    Text("Glide into winter with Pegu")
+                        .font(YoohooFont.display(20))
+                        .foregroundStyle(.white)
+                        .shadow(color: YoohooColor.titleShadow, radius: 0, y: 3)
+                        .lineLimit(1)
+                        .offset(y: 80)
+                    Text("Fresh snow, cool goggles and endless fun. Let this tiny skier bring warmth and joy to your snowy days.")
+                        .font(YoohooFont.body(14))
+                        .foregroundStyle(.white)
+                        .frame(width: 253, alignment: .leading)
+                        .offset(y: 118)
+                }
+                .frame(width: 253, height: 190, alignment: .topLeading)
+                .offset(x: 16)
+                Image("Penguin")
+                    .resizable()
+                    .frame(width: 150 * 1.0949, height: 140 * 1.1731)
+                    .offset(x: 150 * -0.0511, y: 140 * -0.0983)
+                    .frame(width: 150, height: 140, alignment: .topLeading)
+                    .clipped()
+                    .offset(x: 209, y: 144)
             }
-            .frame(width: 253, height: 190, alignment: .topLeading)
-            .offset(x: 16)
-            Image("Penguin")
-                .resizable()
-                .frame(width: 150 * 1.0949, height: 140 * 1.1731)
-                .offset(x: 150 * -0.0511, y: 140 * -0.0983)
-                .frame(width: 150, height: 140, alignment: .topLeading)
-                .clipped()
-                .offset(x: 209, y: 144)
+            .frame(width: 375, alignment: .topLeading)
+            .frame(width: width, alignment: .top)
             controls
-                .offset(y: 36)
+                .padding(.top, 16)
         }
-        .frame(width: 375, height: 260, alignment: .topLeading)
-        .frame(maxWidth: .infinity)
         .overlay(alignment: .bottom) { SnowEdge() }
+        .frame(width: width, height: 260, alignment: .topLeading)
     }
 
     private var controls: some View {
@@ -139,11 +143,7 @@ struct AIChatView: View {
     private var sheet: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 2) {
-                Image("AIChatMark")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 24, height: 24)
-                    .clipped()
+                FieldMark()
                 Text("All Chat")
                     .font(YoohooFont.title(16))
                     .foregroundStyle(YoohooColor.ink)
@@ -170,9 +170,9 @@ struct AIChatView: View {
             Spacer(minLength: 0)
             composer
         }
-        .padding(.horizontal, 16)
         .padding(.top, 40)
         .padding(.bottom, 12)
+        .frame(width: 343)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.white)
     }
