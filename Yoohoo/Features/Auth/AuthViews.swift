@@ -23,7 +23,7 @@ struct SplashView: View {
                 await session.restore()
                 try? await Task.sleep(nanoseconds: 600_000_000)
                 guard nav.stage == .splash else { return }
-                if session.signedIn { nav.enterApp() } else { nav.openAuth() }
+                nav.enterHybrid()
             }
         }
     }

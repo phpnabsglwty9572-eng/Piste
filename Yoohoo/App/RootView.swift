@@ -9,8 +9,8 @@ struct RootView: View {
             switch nav.stage {
             case .splash:
                 SplashView()
-            case .auth, .main:
-                stack
+            case .hybrid, .auth, .main:
+                HybridHostView()
             }
             if session.busy, session.blocksInput {
                 Color.clear

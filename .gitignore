@@ -1,6 +1,8 @@
 xcuserdata/
 DerivedData/
 .DS_Store
+node_modules/
+dist/
 _fetch_assets.js
 _layer_scan.js
 _layer_scan.py

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "files": [
+    "index.html",
+    "manifest.json",
+    "css/app.css",
+    "js/bridge.js",
+    "js/api.js",
+    "js/app.js"
+  ]
+}

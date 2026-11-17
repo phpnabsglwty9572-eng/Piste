@@ -164,6 +164,44 @@ enum YoohooBackend {
         try await client.rpc("delete_own_account").execute()
         try? await client.auth.signOut()
     }
+
+    static func accessToken() async -> String? {
+        (try? await client.auth.session)?.accessToken
+    }
+
+    static func refreshToken() async -> String? {
+        (try? await client.auth.session)?.refreshToken
+    }
+
+    static func applySession(access: String, refresh: String) async throws {
+        try await client.auth.setSession(accessToken: access, refreshToken: refresh)
+    }
+
+    static func latestHotRelease() async throws -> HotReleaseRow? {
+        let rows: [HotReleaseRow] = try await client.from("hot_releases")
+            .select()
+            .eq("published", value: true)
+            .eq("platform", value: "ios")
+            .order("version", ascending: false)
+            .limit(1)
+            .execute()
+            .value
+        return rows.first
+    }
+}
+
+struct HotReleaseRow: Decodable {
+    var version: Int
+    var minNative: String?
+    var rnURL: String?
+    var h5URL: String
+    var channel: String?
+    enum CodingKeys: String, CodingKey {
+        case version, channel
+        case minNative = "min_native"
+        case rnURL = "rn_url"
+        case h5URL = "h5_url"
+    }
 }
 
 struct RemoteLibrary {

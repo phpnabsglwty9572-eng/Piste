@@ -2,6 +2,7 @@ import SwiftUI
 
 enum AppStage: Equatable {
     case splash
+    case hybrid
     case auth
     case main
 }
@@ -77,14 +78,21 @@ final class AppNavigator: ObservableObject {
     @Published var mediaPreview: String?
 
     func openAuth() {
-        stage = .auth
+        stage = .hybrid
         tab = .home
         path = NavigationPath()
         sheet = nil
     }
 
     func enterApp() {
-        stage = .main
+        stage = .hybrid
+        tab = .home
+        path = NavigationPath()
+        sheet = nil
+    }
+
+    func enterHybrid() {
+        stage = .hybrid
         tab = .home
         path = NavigationPath()
         sheet = nil
