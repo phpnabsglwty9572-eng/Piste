@@ -31,8 +31,14 @@
     tags: [],
     draft: "",
     reportTarget: "",
-    eula: ""
+    eula: "",
+    kb: 0,
+    preview: null
   };
+  var stack = [];
+  var busy = false;
+  var poller = 0;
+  var callStream = null;
 
   function el(html) {
     var box = document.createElement("div");
@@ -63,11 +69,18 @@
   async function boot() {
     Bridge.onNative(function (body) {
       if (body.type === "session") applyNativeSession(body.payload || {});
+      if (body.type === "back") back();
+      if (body.type === "keyboard") {
+        state.kb = Number((body.payload && body.payload.height) || 0);
+        document.documentElement.style.setProperty("--kb", state.kb + "px");
+      }
     });
     var env = Bridge.env();
     if (env.accessToken) API.setTokens(env.accessToken, env.refreshToken, "");
     document.getElementById("app").addEventListener("click", onClick);
     document.getElementById("app").addEventListener("submit", onSubmit);
+    document.getElementById("app").addEventListener("contextmenu", onHold);
+    document.getElementById("app").addEventListener("input", onFormInput);
     document.getElementById("app").dataset.ready = "1";
     var start = env.startRoute || (location.hash || "").replace(/^#/, "");
     if (start === "posts") { state.tab = "post"; state.postFilter = "popular"; go("main"); }
@@ -111,18 +124,25 @@
 
   function applyNativeSession(payload) {
     if (payload.accessToken) API.setTokens(payload.accessToken, payload.refreshToken, payload.meID);
+    state.signedIn = !!payload.signedIn;
     state.me.name = payload.meName || state.me.name;
-    state.me.gems = payload.coins || state.me.gems;
-    if (payload.signedIn && state.route === "auth") {
-      reload().then(function () { go("main"); }).catch(function () {});
+    state.me.gems = payload.coins || 0;
+    if (payload.signedIn && (state.route === "auth" || state.route === "signin" || state.route === "register" || state.route === "register2")) {
+      reload().then(function () { stack = []; go("main"); }).catch(function () {});
     }
-    if (payload.signedIn === false && state.route !== "auth") go("auth");
+    if (payload.signedIn === false && state.route !== "auth" && state.route !== "signin" && state.route !== "register" && state.route !== "register2") {
+      stack = [];
+      go("auth");
+    }
   }
 
   async function reload() {
     var profiles = await API.profiles();
     var map = {};
-    profiles.forEach(function (row) { map[row.id] = row; });
+    profiles.forEach(function (row) {
+      row.id = String(row.id || "").toLowerCase();
+      map[row.id] = row;
+    });
     var ids = Object.keys(map);
     state.profiles = map;
     state.me = map[API.me()] || state.me;
@@ -136,13 +156,25 @@
     var posts = await API.posts(ids);
     var rooms = await API.rooms(ids);
     var comments = await API.comments(posts.map(function (p) { return p.id; }));
-    state.follows = await API.follows();
+    state.follows = (await API.follows() || []).map(function (row) {
+      row.follower = String(row.follower || "").toLowerCase();
+      row.followee = String(row.followee || "").toLowerCase();
+      return row;
+    });
     state.blocks = (await API.blocks()).map(function (row) { return row.blocked; });
     state.likes = (await API.likes()).map(function (row) { return row.post_id; });
     var threads = await API.threads();
-    var hidden = (await API.hides()).map(function (row) { return row.thread_id; });
-    threads = threads.filter(function (row) { return hidden.indexOf(row.id) < 0; });
+    var hidden = (await API.hides()).map(function (row) { return String(row.thread_id || "").toLowerCase(); });
+    threads = threads.filter(function (row) { return hidden.indexOf(String(row.id || "").toLowerCase()) < 0; });
     var messages = await API.messages(threads.map(function (row) { return row.id; }));
+    function lower(row, key) { if (row[key]) row[key] = String(row[key]).toLowerCase(); }
+    posts.forEach(function (row) { lower(row, "author_id"); lower(row, "id"); });
+    rooms.forEach(function (row) { lower(row, "owner_id"); lower(row, "id"); });
+    comments.forEach(function (row) { lower(row, "author_id"); lower(row, "id"); lower(row, "post_id"); });
+    threads.forEach(function (row) { lower(row, "id"); lower(row, "user_low"); lower(row, "user_high"); });
+    messages.forEach(function (row) { lower(row, "thread_id"); lower(row, "sender_id"); });
+    state.blocks = state.blocks.map(function (id) { return String(id).toLowerCase(); });
+    state.likes = state.likes.map(function (id) { return String(id).toLowerCase(); });
     state.posts = posts.filter(function (row) { return !blocked(row.author_id); });
     state.rooms = rooms.filter(function (row) { return !blocked(row.owner_id); });
     state.comments = comments.filter(function (row) { return !blocked(row.author_id); });
@@ -196,15 +228,71 @@
     else if (route === "live-block") { go("live"); state.sheet = "blacklist"; draw(); }
     else go(route);
   };
+  function snap() {
+    return {
+      route: state.route,
+      tab: state.tab,
+      live: state.live,
+      post: state.post,
+      chat: state.chat,
+      profile: state.profile,
+      peopleKind: state.peopleKind,
+      composeKind: state.composeKind,
+      profileTab: state.profileTab,
+      postFilter: state.postFilter,
+      aboutKind: state.aboutKind,
+      aboutId: state.aboutId
+    };
+  }
+
   function go(route, extra) {
+    var fromAuth = ["auth", "signin", "register", "register2"].indexOf(state.route) >= 0;
+    var toAuth = ["auth", "signin", "register", "register2"].indexOf(route) >= 0;
+    if (route === "auth" || (route === "main" && fromAuth)) stack = [];
+    else if (state.route !== route || extra) {
+      if (!(state.route === "main" && route === "main") && !toAuth) stack.push(snap());
+    }
+    if (state.route === "call" && route !== "call") {
+      Bridge.ring(false);
+      stopCamera();
+    }
     state.route = route;
     state.sheet = null;
+    state.preview = null;
     if (extra) Object.keys(extra).forEach(function (key) { state[key] = extra[key]; });
+    if (route === "call") Bridge.ring(true);
     draw();
+  }
+
+  function back() {
+    var active = document.activeElement;
+    if (active && active.blur) active.blur();
+    if (state.preview) { state.preview = null; draw(); return; }
+    if (state.sheet) { state.sheet = null; draw(); return; }
+    if (state.route === "call") { Bridge.ring(false); stopCamera(); }
+    if (stack.length) {
+      var prev = stack.pop();
+      Object.keys(prev).forEach(function (key) { state[key] = prev[key]; });
+      state.sheet = null;
+      state.preview = null;
+      draw();
+      return;
+    }
+    if (state.route !== "main" && state.route !== "auth") {
+      state.route = API.me() ? "main" : "auth";
+      draw();
+    }
+  }
+
+  function needAuth() {
+    if (API.me()) return true;
+    go("signin");
+    return false;
   }
 
   function draw() {
     var root = document.getElementById("app");
+    document.documentElement.style.setProperty("--kb", (state.kb || 0) + "px");
     if (state.route === "auth") root.replaceChildren(authView());
     else if (state.route === "register" || state.route === "signin") root.replaceChildren(formView());
     else if (state.route === "register2") root.replaceChildren(registerPhotosView());
@@ -222,6 +310,17 @@
     else if (state.route === "people") root.replaceChildren(peopleView());
     else root.replaceChildren(mainView());
     if (state.sheet) root.appendChild(sheetView());
+    if (state.preview) {
+      root.appendChild(el(
+        '<div class="preview" data-act="close-preview">' +
+          (state.previewVideo
+            ? '<video src="' + esc(state.preview) + '" autoplay playsinline controls></video>'
+            : '<img src="' + esc(state.preview) + '" alt="" />') +
+        "</div>"
+      ));
+    }
+    startPoll();
+    if (state.route === "call") startCamera();
   }
 
   function authView() {
@@ -248,7 +347,7 @@
       '<img class="form-sky" src="img/AuthSky.png" alt="" />' +
       '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
       '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
-      '<button class="form-back" data-act="go" data-to="' + back + '"><img src="img/BackButton.svg" alt="" /></button>' +
+      '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
       '<div class="form-title">' + title + "</div></div>";
   }
 
@@ -334,7 +433,7 @@
           '<button class="home-title" data-act="go" data-to="ai">Glide into winter with Pegu</button>' +
           '<button class="home-blurb" data-act="go" data-to="ai">Fresh snow, cool goggles and endless fun. Let this tiny skier bring warmth and joy to your snowy days.</button>' +
           '<button class="home-penguin" data-act="go" data-to="ai"><img src="img/Penguin.png" alt="" style="width:150px;height:140px;object-fit:cover" /></button>' +
-          '<button class="home-avatar" data-act="go" data-to="profile">' +
+          '<button class="home-avatar" data-act="back">' +
             '<img class="face" src="' + esc(face) + '" alt="" />' +
             '<img class="frame" src="img/AvatarFrame.png" alt="" />' +
             '<img class="edit" src="img/EditBadge.svg" alt="" />' +
@@ -420,8 +519,8 @@
     var liked = state.likes.indexOf(post.id) >= 0;
     return '<article class="live-card post-card">' +
       '<div class="live-photo tall">' +
-        '<img class="stage" src="' + esc(photo) + '" alt="" data-act="open-post" data-id="' + post.id + '" />' +
-        (post.is_video ? '<button class="play" data-act="open-post" data-id="' + post.id + '"><img src="img/PlayButton.svg" alt="" /></button>' : "") +
+        '<img class="stage' + (photo.indexOf("http") === 0 ? " shine" : "") + '" src="' + esc(photo) + '" alt="" data-act="' + (state.route === "post" ? "preview" : "open-post") + '" data-id="' + post.id + '" onload="this.classList.remove(\'shine\')" />' +
+        (post.is_video ? '<button class="play" data-act="play-video" data-id="' + post.id + '"><img src="img/PlayButton.svg" alt="" /></button>' : "") +
         '<div class="live-bar">' +
           '<div class="author">' +
             '<img class="av" src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + post.author_id + '" />' +
@@ -478,7 +577,7 @@
     var welcome = "Welcome! Respect others and keep chats positive. No hate or offensive comments. Enjoy our friendly live space.";
     var lines = (state.roomLines || []).map(function (line) {
       var who = state.profiles[line.sender_id] || {};
-      return '<div class="live-line"><span class="who">' + esc(who.name || "") + "</span> " + esc(line.body) + "</div>";
+      return '<div class="live-line" data-hold="live" data-id="' + (line.id || line.sender_id) + '"><span class="who">' + esc(who.name || "") + "</span> " + esc(line.body) + "</div>";
     }).join("");
     return el(
       '<div class="live-room">' +
@@ -497,7 +596,7 @@
           '<label class="say"><img src="img/CommentSend.svg" alt="" /><input name="body" placeholder="Please enter..." /></label>' +
           '<button class="sq gift-btn" type="button" data-act="gift"><img src="img/LiveGift.png" alt="" /></button>' +
           '<button class="sq" type="button" data-act="about-person" data-id="' + room.owner_id + '"><img src="img/MoreCircle.svg" alt="" /></button>' +
-          '<button class="sq" type="button" data-act="go" data-to="main"><img src="img/LiveShare.svg" alt="" /></button>' +
+          '<button class="sq" type="button" data-act="back"><img src="img/LiveShare.svg" alt="" /></button>' +
         "</form>" +
         (state.gift ? '<div class="gift-fx"><img src="img/' + esc(state.gift) + '.png" alt="" /><span class="word">Send</span><span class="who">' + esc((state.me && state.me.name) || "") + "</span></div>" : "") +
       "</div>"
@@ -508,7 +607,7 @@
     var post = state.posts.filter(function (row) { return row.id === state.post; })[0];
     var comments = state.comments.filter(function (row) { return post && row.post_id === post.id; }).map(function (row) {
       var user = state.profiles[row.author_id] || {};
-      return '<div class="cmt"><img src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" />' +
+      return '<div class="cmt" data-hold="comment" data-id="' + row.id + '"><img src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + row.author_id + '" />' +
         '<div class="cmt-body"><div class="cmt-top"><b>' + esc(user.name || "") + ":</b><span>" + stamp(row.created_at) + "</span></div>" +
         "<p>" + esc(row.body) + "</p></div></div>";
     }).join("");
@@ -517,7 +616,7 @@
       '<div class="form-page">' +
         '<div class="form-head">' +
           '<img class="form-sky" src="img/AuthSky.png" alt="" />' +
-          '<button class="form-back" data-act="go" data-to="main"><img src="img/BackButton.svg" alt="" /></button>' +
+          '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           '<div class="form-title">Detail</div>' +
           (post ? '<button class="head-icon like" data-act="like" data-id="' + post.id + '"><img src="img/' + (state.likes.indexOf(post.id) >= 0 ? "LikeOnGlyph.svg" : "FollowGlyph.svg") + '" alt="" /></button>' : "") +
           (post ? '<button class="head-icon more" data-act="about-post" data-id="' + post.id + '"><img src="img/MoreCircle.svg" alt="" /></button>' : "") +
@@ -529,7 +628,7 @@
           '<div class="form-label"><img src="img/FieldBell.png" alt="" />Comment</div>' +
           (comments || empty) +
         "</div>" +
-        '<form class="pink-enter" data-form="comment"><img src="img/CommentSend.svg" alt="" /><input name="body" placeholder="Please enter..." /></form>' +
+        '<form class="pink-enter" data-form="comment"><img src="img/CommentSend.svg" alt="" /><input name="body" placeholder="Please enter..." enterkeyhint="send" /></form>' +
       "</div>"
     );
   }
@@ -544,7 +643,7 @@
       '<div class="form-page">' +
         '<div class="feed-head compose-head">' +
           '<img class="form-sky" src="img/AuthSky.png" alt="" />' +
-          '<button class="form-back" data-act="go" data-to="main"><img src="img/BackButton.svg" alt="" /></button>' +
+          '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           '<div class="form-title">Create post</div>' +
           '<div class="post-pills compose-pills">' +
             '<button class="pill pink' + (imageTab ? " on" : "") + '" type="button" data-act="compose-kind" data-id="image">Image</button>' +
@@ -575,17 +674,17 @@
       var prev = all[i - 1];
       var showTime = !prev || stamp(prev.created_at) !== stampRow;
       return (showTime && stampRow ? '<div class="chat-time">' + stampRow + "</div>" : "") +
-        '<div class="talk ' + (mine ? "me" : "you") + '">' +
-          (mine ? "" : '<img class="face" src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" />') +
+        '<div class="talk ' + (mine ? "me" : "you") + '" data-hold="chat" data-id="' + (row.id || i) + '">' +
+          (mine ? "" : '<img class="face" src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + esc(state.chat || "") + '" />') +
           '<div class="bubble">' + esc(row.body) + "</div>" +
-          (mine ? '<img class="face" src="' + esc((state.me && state.me.avatar_url) || "img/SampleAvatar.png") + '" alt="" />' : "") +
+          (mine ? '<img class="face" src="' + esc((state.me && state.me.avatar_url) || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + esc(API.me() || "") + '" />' : "") +
         "</div>";
     }).join("");
     return el(
       '<div class="form-page">' +
         '<div class="form-head">' +
           '<img class="form-sky" src="img/AuthSky.png" alt="" />' +
-          '<button class="form-back" data-act="go" data-to="main"><img src="img/BackButton.svg" alt="" /></button>' +
+          '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           '<div class="form-title">' + esc(user.name || "Chat") + "</div>" +
           (user.name ? '<div class="head-host">' +
             '<img class="av" src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" />' +
@@ -613,9 +712,10 @@
     var body;
     if (state.ai.length) {
       body = state.ai.map(function (row) {
+        var text = row.thinking ? "..." : esc(row.body) + (row.typing ? '<span class="ai-caret"></span>' : "");
         return '<div class="talk ' + (row.mine ? "me" : "you") + '">' +
           (row.mine ? "" : '<img class="face" src="img/Penguin.png" alt="" />') +
-          '<div class="bubble">' + esc(row.body) + "</div>" +
+          '<div class="bubble">' + text + "</div>" +
           (row.mine ? '<img class="face" src="' + esc((state.me && state.me.avatar_url) || "img/AIUserFace.png") + '" alt="" />' : "") +
         "</div>";
       }).join("");
@@ -630,7 +730,7 @@
         '<div class="home-head ai-head">' +
           '<img class="home-sky" src="img/HomeSky.png" alt="" />' +
           '<img class="home-cap" src="img/SnowCap.png" alt="" />' +
-          '<button class="form-back" data-act="go" data-to="main"><img src="img/BackButton.svg" alt="" /></button>' +
+          '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           '<div class="pegu-chip"><img src="img/Penguin.png" alt="" /><div><b>Pegu</b><span>5 /Message</span></div></div>' +
           '<button class="head-icon more" data-act="about-ai"><img src="img/MoreCircle.svg" alt="" /></button>' +
           '<div class="home-marks">' +
@@ -658,8 +758,9 @@
       '<div class="call-room">' +
         '<img class="bg" src="' + esc(photo) + '" alt="" />' +
         '<div class="veil"></div>' +
+        '<video class="local" autoplay playsinline muted></video>' +
         '<div class="call-meta"><b>' + esc(user.name || "") + "</b><span>Video Call...</span></div>" +
-        '<button class="hang" data-act="go" data-to="chat"><img src="img/CallEnd.svg" alt="" /></button>' +
+        '<button class="hang" data-act="back"><img src="img/CallEnd.svg" alt="" /></button>' +
       "</div>"
     );
   }
@@ -680,7 +781,7 @@
       '<div class="form-page">' +
         '<div class="prof-head">' +
           '<img class="prof-cover" src="' + esc(coverURL) + '" alt="" />' +
-          '<button class="form-back" data-act="go" data-to="main"><img src="img/BackButton.svg" alt="" /></button>' +
+          '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           (mine
             ? '<button class="head-icon more" data-act="go" data-to="settings"><img src="img/SettingsIcon.svg" alt="" /></button>'
             : '<button class="head-icon more" data-act="about-person" data-id="' + esc(id || "") + '"><img src="img/MoreCircle.svg" alt="" /></button>') +
@@ -691,7 +792,7 @@
             '<img class="frame" src="img/AvatarFrame.png" alt="" />' +
             (mine
               ? '<button class="edit" data-act="go" data-to="edit"><img src="img/EditBadge.svg" alt="" /></button>'
-              : (id ? '<button class="edit plus" data-act="follow" data-id="' + esc(id) + '"><img src="img/BadgePlus.png" alt="" /></button>' : "")) +
+              : (id && !following(id) ? '<button class="edit plus" data-act="follow" data-id="' + esc(id) + '"><img src="img/BadgePlus.png" alt="" /></button>' : "")) +
           "</div>" +
         "</div>" +
         '<div class="scroll prof-body">' +
@@ -760,7 +861,7 @@
       '<div class="form-page shop-page">' +
         '<div class="shop-head">' +
           '<img class="banner" src="img/CoinShop.png" alt="" />' +
-          '<button class="form-back" data-act="go" data-to="profile"><img src="img/BackButton.svg" alt="" /></button>' +
+          '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           '<div class="form-title">Coin Shop</div>' +
           '<button class="gem-chip"><img src="img/Coin5.png" alt="" /><span>' + gems + '</span><img class="plus" src="img/CoinPlus.svg" alt="" /></button>' +
           '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
@@ -815,8 +916,8 @@
       if (kind === "block") action = '<button class="pill-act gray" data-act="unblock" data-id="' + id + '">Remove</button>';
       else if (kind === "fans" && !following(id)) action = '<button class="pill-act blue" data-act="follow" data-id="' + id + '">Follow<img src="img/BadgePlus.png" alt="" /></button>';
       else action = '<button class="pill-act gray" data-act="follow" data-id="' + id + '">Followed</button>';
-      return '<div class="people-row"><img src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" />' +
-        '<div class="meta"><b>' + esc(user.name) + "</b><span>" + esc(user.handle || "") + "</span></div>" + action + "</div>";
+      return '<div class="people-row"><img src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + id + '" />' +
+        '<div class="meta" data-act="profile" data-id="' + id + '"><b>' + esc(user.name) + "</b><span>" + esc(user.handle || "") + "</span></div>" + action + "</div>";
     }).join("");
     return el(
       '<div class="form-page">' + formChrome(title, back) +
@@ -833,6 +934,11 @@
         rows = '<button class="set-row" data-act="report"><img src="img/MenuReport.svg" alt="" /><span>Report</span></button>' +
           '<button class="set-row" data-act="delete-target"><img src="img/SetTrash.svg" alt="" /><span>Delete Post</span></button>' +
           '<button class="set-row" data-act="block-user"><img src="img/MenuSad.svg" alt="" /><span>Add to Blacklist</span></button>';
+      } else if (state.aboutKind === "comment") {
+        rows = state.aboutMine
+          ? '<button class="set-row" data-act="delete-comment"><img src="img/SetTrash.svg" alt="" /><span>Delete</span></button>'
+          : '<button class="set-row" data-act="report"><img src="img/MenuReport.svg" alt="" /><span>Report</span></button>' +
+            '<button class="set-row" data-act="block-user"><img src="img/MenuSad.svg" alt="" /><span>Add to Blacklist</span></button>';
       } else if (state.aboutKind === "chat") {
         rows = '<button class="set-row" data-act="report"><img src="img/MenuReport.svg" alt="" /><span>Report</span></button>' +
           '<button class="set-row" data-act="delete-target"><img src="img/SetTrash.svg" alt="" /><span>Delete Chat</span></button>';
@@ -953,21 +1059,46 @@
     if (!node) return;
     var act = node.getAttribute("data-act");
     var id = node.getAttribute("data-id");
+    var gated = ["follow","live","like","open-chat","buy","gift","send-gift","call","compose","ai-prompt","people","pick"].indexOf(act) >= 0
+      || (act === "go" && ["compose","shop","edit","settings","ai"].indexOf(node.getAttribute("data-to")) >= 0);
+    if (gated && !needAuth()) return;
+    if (busy && ["follow","like","buy","live","open-chat","confirm-block","confirm-delete-post","confirm-delete-chat","send-gift"].indexOf(act) >= 0) return;
     try {
-      if (act === "go") go(node.getAttribute("data-to"), node.getAttribute("data-to") === "profile" ? { profile: API.me() } : null);
-      else if (act === "tab") { state.tab = id; state.route = "main"; draw(); }
+      if (act === "back") back();
+      else if (act === "go") {
+        var to = node.getAttribute("data-to");
+        go(to, to === "profile" ? { profile: API.me() } : null);
+      }
+      else if (act === "tab") { Bridge.haptic(); state.tab = id; state.route = "main"; draw(); }
       else if (act === "post-filter") { state.postFilter = id; draw(); }
       else if (act === "apple") await apple();
       else if (act === "agree") { await Bridge.eula(); go("auth"); }
-      else if (act === "follow") { await API.setFollow(id, !following(id)); await reload(); }
-      else if (act === "live") { state.live = id; await API.joinRoom(id); state.roomLines = await API.roomMessages(id); go("live"); }
-      else if (act === "like") { await API.like(id, state.likes.indexOf(id) < 0); await reload(); }
+      else if (act === "follow") {
+        var on = !following(id);
+        await API.setFollow(id, on);
+        await reload();
+        Bridge.toast(on ? "Followed." : "Unfollowed.");
+      }
+      else if (act === "live") {
+        await API.joinRoom(id).catch(function () {});
+        state.roomLines = await API.roomMessages(id);
+        go("live", { live: id });
+      }
+      else if (act === "like") {
+        var liked = state.likes.indexOf(id) < 0;
+        await API.like(id, liked);
+        await reload();
+        if (liked) Bridge.toast("Liked.");
+      }
       else if (act === "open-post") go("post", { post: id });
       else if (act === "open-chat") { await API.openThread(id); await reload(); go("chat", { chat: id }); }
       else if (act === "profile") go("profile", { profile: id });
       else if (act === "people") go("people", { peopleKind: id });
       else if (act === "legal") await Bridge.legal(id);
-      else if (act === "buy") { await Bridge.buy(id); await reload(); }
+      else if (act === "buy") {
+        var bought = await Bridge.buy(id);
+        if (bought && bought.ok) await reload();
+      }
       else if (act === "profile-tab") { state.profileTab = id; draw(); }
       else if (act === "clean-cache") { Bridge.toast("Cleaned."); }
       else if (act === "compose-kind") { state.composeKind = id; draw(); }
@@ -993,29 +1124,51 @@
       else if (act === "call") go("call");
       else if (act === "ai-prompt") { await sendAI(id); }
       else if (act === "close-sheet") { state.sheet = null; draw(); }
+      else if (act === "close-preview") { state.preview = null; state.previewVideo = false; draw(); }
+      else if (act === "preview") {
+        var post = state.posts.filter(function (row) { return row.id === id; })[0];
+        var photos = post && (post.media_urls || (post.media_url ? [post.media_url] : []));
+        state.preview = (photos && photos[0]) || node.getAttribute("src") || "";
+        state.previewVideo = !!(post && post.is_video);
+        draw();
+      }
+      else if (act === "play-video") {
+        var clip = state.posts.filter(function (row) { return row.id === id; })[0];
+        var urls = clip && (clip.media_urls || (clip.media_url ? [clip.media_url] : []));
+        state.preview = (urls && urls[0]) || "";
+        state.previewVideo = true;
+        if (state.route !== "post") go("post", { post: id });
+        else draw();
+      }
       else if (act === "report") { state.sheet = "report"; draw(); }
       else if (act === "feedback") { state.sheet = "feedback"; draw(); }
       else if (act === "audience") { state.sheet = "audience"; draw(); }
       else if (act === "pick-frame") { state.framePick = Number(id); draw(); }
-      else if (act === "confirm-logout") { await Bridge.signOut(); go("auth"); }
-      else if (act === "confirm-erase") { await API.deleteAccount(); await Bridge.signOut(); go("auth"); }
+      else if (act === "confirm-logout") { stack = []; await Bridge.signOut(); go("auth"); }
+      else if (act === "confirm-erase") { stack = []; await API.deleteAccount(); await Bridge.signOut(); go("auth"); }
       else if (act === "block-user") { state.sheet = "blacklist"; draw(); }
       else if (act === "delete-target") {
         state.sheet = state.aboutKind === "chat" ? "delete-chat" : "delete-post";
         draw();
       }
+      else if (act === "delete-comment") {
+        await API.deleteComment(state.aboutId);
+        state.sheet = null;
+        await reload();
+        Bridge.toast("Deleted.");
+      }
       else if (act === "confirm-delete-post") {
         if (state.aboutId) await API.deletePost(state.aboutId);
-        state.sheet = null; await reload(); go("main");
+        state.sheet = null; await reload(); Bridge.toast("Deleted."); back();
       }
       else if (act === "confirm-delete-chat") {
         if (state.threads[state.chat]) await API.hideThread(state.threads[state.chat]);
-        state.sheet = null; await reload(); go("main");
+        state.sheet = null; await reload(); Bridge.toast("Deleted."); back();
       }
       else if (act === "confirm-block") {
-        await API.block(state.reportTarget); state.sheet = null; await reload(); go("main");
+        await API.block(state.reportTarget); state.sheet = null; await reload(); Bridge.toast("Blocked."); back();
       }
-      else if (act === "unblock") { await API.unblock(id); await reload(); }
+      else if (act === "unblock") { await API.unblock(id); await reload(); Bridge.toast("Removed."); }
       else if (act === "logout") { state.sheet = "logout"; draw(); }
       else if (act === "erase") { state.sheet = "erase"; draw(); }
     } catch (err) {
@@ -1030,12 +1183,44 @@
       var post = state.posts.filter(function (row) { return row.id === id; })[0];
       state.reportTarget = post ? post.author_id : id;
       state.aboutMine = post && post.author_id === API.me();
+    } else if (kind === "comment") {
+      var comment = state.comments.filter(function (row) { return row.id === id; })[0];
+      state.reportTarget = comment ? comment.author_id : id;
+      state.aboutMine = comment && comment.author_id === API.me();
     } else {
-      state.reportTarget = id;
+      state.reportTarget = id === "pegu" ? id : (id || state.chat);
       state.aboutMine = false;
     }
     state.sheet = "about";
     draw();
+  }
+
+  function onHold(event) {
+    var node = event.target.closest("[data-hold]");
+    if (!node) return;
+    event.preventDefault();
+    var kind = node.getAttribute("data-hold");
+    var id = node.getAttribute("data-id");
+    if (kind === "comment") openAbout("comment", id);
+    else if (kind === "chat") openAbout("chat", state.chat);
+    else if (kind === "live") openAbout("live", id);
+  }
+
+  function onFormInput(event) {
+    var form = event.target.closest("form");
+    if (!form) return;
+    var kind = form.getAttribute("data-form");
+    if (kind === "signin" || kind === "register" || kind === "compose" || kind === "edit") {
+      var btn = form.querySelector(".snow-btn img") || document.querySelector(".form-foot .snow-btn img");
+      if (!btn) return;
+      var filled = false;
+      if (kind === "compose") filled = !!(state.picked && state.picked.length);
+      else if (kind === "edit") filled = !!(event.target.value || "").trim();
+      else filled = Array.prototype.every.call(form.querySelectorAll("input[required], input[name]"), function (input) {
+        return String(input.value || "").trim();
+      });
+      btn.src = filled ? "img/ButtonBlue.svg" : "img/ButtonGray.svg";
+    }
   }
 
   async function apple() {
@@ -1052,18 +1237,32 @@
     var kind = form.getAttribute("data-form");
     var data = new FormData(form);
     var body = String(data.get("body") || "").trim();
+    if (busy) return;
     try {
-      await Bridge.wait(true);
       if (kind === "register") {
-        state.form.email = String(data.get("email") || "");
+        state.form.email = String(data.get("email") || "").trim();
         state.form.password = String(data.get("password") || "");
-        state.form.name = String(data.get("name") || "");
+        state.form.name = String(data.get("name") || "").trim();
+        if (!state.form.email || !state.form.password || !state.form.name) {
+          Bridge.toast("Please enter...");
+          return;
+        }
         go("register2");
-      } else if (kind === "signin") {
+        return;
+      }
+      if (kind === "comment" && !needAuth()) return;
+      if (kind === "chat" && !needAuth()) return;
+      if (kind === "live" && !needAuth()) return;
+      if (kind === "ai" && !needAuth()) return;
+      if (kind === "compose" && !needAuth()) return;
+      busy = true;
+      await Bridge.wait(true);
+      if (kind === "signin") {
         await Bridge.eula();
         await API.signIn(String(data.get("email") || ""), String(data.get("password") || ""));
         await Bridge.setSession(API.tokens().access, API.tokens().refresh);
         await reload();
+        stack = [];
         go("main");
       } else if (kind === "register2") {
         await Bridge.eula();
@@ -1075,21 +1274,37 @@
         if (state.coverPick) coverURL = await API.upload(API.me() + "/cover.jpg", state.coverPick, "image/jpeg");
         await API.saveProfile(state.form.name, avatar, coverURL);
         await reload();
+        stack = [];
         go("main");
-      } else if (kind === "comment") { await API.addComment(state.post, body); await reload(); }
-      else if (kind === "chat") { await API.sendMessage(state.threads[state.chat], body); await reload(); }
-      else if (kind === "live") { await API.sendRoomMessage(state.live, body); state.roomLines = await API.roomMessages(state.live); draw(); }
-      else if (kind === "ai") { await sendAI(body); }
+      } else if (kind === "comment") {
+        if (!body) return;
+        await API.addComment(state.post, body);
+        await reload();
+      } else if (kind === "chat") {
+        if (!body) return;
+        if (!state.threads[state.chat]) {
+          await API.openThread(state.chat);
+          await reload();
+        }
+        await API.sendMessage(state.threads[state.chat], body);
+        await reload();
+      } else if (kind === "live") {
+        if (!body) return;
+        await API.sendRoomMessage(state.live, body);
+        state.roomLines = await API.roomMessages(state.live);
+        draw();
+      } else if (kind === "ai") { await sendAI(body); }
       else if (kind === "tag") {
         var tag = body.replace(/^#/, "").trim();
         if (tag && (state.tags || []).indexOf(tag) < 0) state.tags.push(tag);
         state.sheet = null;
         draw();
       } else if (kind === "compose") {
-        var urls = [];
         var items = state.picked || [];
+        if (!items.length) { Bridge.toast("Please enter..."); return; }
+        var urls = [];
         for (var i = 0; i < items.length; i++) {
-          urls.push(await API.upload("yoohoo/posts/" + Date.now() + "-" + i + ".jpg", items[i].uri, "image/jpeg"));
+          urls.push(await API.upload("yoohoo/posts/" + Date.now() + "-" + i + ".jpg", items[i].uri, items[i].mime || "image/jpeg"));
         }
         var caption = body;
         (state.tags || []).forEach(function (tag) { caption += (caption ? " " : "") + "#" + tag; });
@@ -1097,6 +1312,9 @@
         state.picked = [];
         state.tags = [];
         await reload();
+        Bridge.toast("Released.");
+        stack = [];
+        state.tab = "post";
         go("main");
       } else if (kind === "edit") {
         var avatar = state.me.avatar_url;
@@ -1105,12 +1323,14 @@
         if (state.coverPick) coverURL = await API.upload("yoohoo/profiles/" + API.me() + "-cover.jpg", state.coverPick, "image/jpeg");
         await API.saveProfile(String(data.get("name") || state.me.name), avatar, coverURL);
         await reload();
+        Bridge.toast("Saved.");
         go("profile", { profile: API.me() });
       } else if (kind === "feedback") { await API.feedback(body); state.sheet = null; Bridge.toast("Sent."); draw(); }
       else if (kind === "report") { await API.report(state.reportTarget, String(data.get("reason") || body)); state.sheet = null; Bridge.toast("Reported."); draw(); }
     } catch (err) {
       Bridge.toast(err.message || String(err));
     } finally {
+      busy = false;
       await Bridge.wait(false);
     }
   }
@@ -1119,24 +1339,68 @@
     var body = String(text || "").trim();
     if (!body) return;
     state.ai.push({ mine: true, body: body });
+    var think = { mine: false, body: "", thinking: true };
+    state.ai.push(think);
     draw();
     try {
       await API.addAI(true, body);
       await API.spendGems(5);
-    } catch (err) {}
+    } catch (err) {
+      state.ai.pop();
+      draw();
+      Bridge.toast(err.message || String(err));
+      return;
+    }
+    think.thinking = false;
     var reply = "The snow looks good today.";
-    await typeAI(reply);
+    await typeAI(think, reply);
     try { await API.addAI(false, reply); } catch (err) {}
   }
 
-  async function typeAI(text) {
-    var item = { mine: false, body: "" };
-    state.ai.push(item);
+  async function typeAI(item, text) {
+    item.body = "";
+    item.typing = true;
     for (var i = 0; i < text.length; i++) {
       item.body += text[i];
       draw();
       await new Promise(function (resolve) { setTimeout(resolve, 28); });
     }
+    item.typing = false;
+    draw();
+  }
+
+  function startPoll() {
+    clearInterval(poller);
+    if (state.route !== "live" && state.route !== "chat") return;
+    poller = setInterval(function () {
+      var typing = document.activeElement && (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA");
+      if (typing) return;
+      if (state.route === "live" && state.live) {
+        API.roomMessages(state.live).then(function (rows) {
+          if (state.route !== "live") return;
+          state.roomLines = rows || [];
+          draw();
+        }).catch(function () {});
+      } else if (state.route === "chat" && state.chat) {
+        reload().catch(function () {});
+      }
+    }, 4000);
+  }
+
+  function startCamera() {
+    var video = document.querySelector("video.local");
+    if (!video || !navigator.mediaDevices || callStream) return;
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: true }).then(function (stream) {
+      callStream = stream;
+      video.srcObject = stream;
+      video.play();
+    }).catch(function () {});
+  }
+
+  function stopCamera() {
+    if (!callStream) return;
+    callStream.getTracks().forEach(function (track) { track.stop(); });
+    callStream = null;
   }
 
   try {

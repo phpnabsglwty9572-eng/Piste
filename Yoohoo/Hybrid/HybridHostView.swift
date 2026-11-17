@@ -1,3 +1,4 @@
+import AVFoundation
 import PhotosUI
 import SafariServices
 import StoreKit
@@ -23,13 +24,14 @@ struct HybridHostView: UIViewControllerRepresentable {
     }
 }
 
-final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNavigationDelegate, PHPickerViewControllerDelegate {
+final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, PHPickerViewControllerDelegate, UIGestureRecognizerDelegate {
     weak var session: YoohooSession?
     weak var nav: AppNavigator?
     private var rnView: WKWebView!
     private var h5View: WKWebView?
     private var paths: HotPaths?
     private var pendingPick: (max: Int, video: Bool, id: String)?
+    private let ringer = CallRinger()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -43,10 +45,17 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
             rnView.topAnchor.constraint(equalTo: view.topAnchor),
             rnView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+        let edge = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(onEdge(_:)))
+        edge.edges = .left
+        edge.delegate = self
+        view.addGestureRecognizer(edge)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardFrame(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardFrame(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
         Task { await boot() }
     }
 
     deinit {
+        NotificationCenter.default.removeObserver(self)
         rnView?.configuration.userContentController.removeScriptMessageHandler(forName: "yoohoo")
         h5View?.configuration.userContentController.removeScriptMessageHandler(forName: "yoohoo")
     }
@@ -71,7 +80,10 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         config.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
         let web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
+        web.uiDelegate = self
+        web.allowsBackForwardNavigationGestures = false
         web.scrollView.bounces = false
+        web.scrollView.keyboardDismissMode = .interactive
         web.scrollView.contentInsetAdjustmentBehavior = .never
         web.isOpaque = false
         web.backgroundColor = .clear
@@ -161,6 +173,12 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
             reply(id, ["ok": true])
         case "eulaText":
             reply(id, ["text": eulaText()])
+        case "haptic":
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            reply(id, ["ok": true])
+        case "ring":
+            if payload["on"] as? Bool == true { ringer.start() } else { ringer.stop() }
+            reply(id, ["ok": true])
         default:
             reply(id, ["ok": false])
         }
@@ -385,5 +403,85 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
             }
         }
         decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        decisionHandler(.grant)
+    }
+
+    @objc private func onEdge(_ gesture: UIScreenEdgePanGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        let translation = gesture.translation(in: view).x
+        let velocity = gesture.velocity(in: view).x
+        if translation > 48 || velocity > 480 {
+            emit("back", [:])
+        }
+    }
+
+    @objc private func keyboardFrame(_ note: Notification) {
+        let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect) ?? .zero
+        let local = view.convert(frame, from: nil)
+        let height = note.name == UIResponder.keyboardWillHideNotification ? 0 : max(0, view.bounds.maxY - local.minY)
+        emit("keyboard", ["height": NSNumber(value: height)])
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        true
+    }
+}
+
+final class CallRinger {
+    private var player: AVAudioPlayer?
+    private var timer: Timer?
+
+    func start() {
+        stop()
+        beep()
+        timer = Timer.scheduledTimer(withTimeInterval: 1.35, repeats: true) { [weak self] _ in
+            self?.beep()
+        }
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        player?.stop()
+        player = nil
+    }
+
+    private func beep() {
+        guard let data = Self.tone() else { return }
+        player = try? AVAudioPlayer(data: data)
+        player?.volume = 0.45
+        player?.play()
+    }
+
+    private static func tone() -> Data? {
+        let sampleRate = 8000
+        let duration = 0.42
+        let count = Int(Double(sampleRate) * duration)
+        var data = Data()
+        var header = Data()
+        func append(_ value: UInt32) {
+            var v = value.littleEndian
+            header.append(Data(bytes: &v, count: 4))
+        }
+        header.append(contentsOf: Array("RIFF".utf8))
+        append(UInt32(36 + count))
+        header.append(contentsOf: Array("WAVEfmt ".utf8))
+        append(16)
+        header.append(contentsOf: [1, 0, 1, 0])
+        append(UInt32(sampleRate))
+        append(UInt32(sampleRate))
+        header.append(contentsOf: [1, 0, 8, 0])
+        header.append(contentsOf: Array("data".utf8))
+        append(UInt32(count))
+        data.append(header)
+        for i in 0..<count {
+            let sample = sin(2.0 * Double.pi * 480.0 * Double(i) / Double(sampleRate))
+            let fade = min(1.0, min(Double(i) / 200.0, Double(count - i) / 200.0))
+            data.append(UInt8(clamping: Int((sample * fade * 0.35 + 0.5) * 255)))
+        }
+        return data
     }
 }

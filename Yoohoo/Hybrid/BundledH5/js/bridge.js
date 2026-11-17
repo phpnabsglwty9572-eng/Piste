@@ -45,6 +45,8 @@
     setSession: function (accessToken, refreshToken) {
       return post("setSession", { accessToken: accessToken, refreshToken: refreshToken });
     },
-    signOut: function () { return post("signOut"); }
+    signOut: function () { return post("signOut"); },
+    haptic: function () { return post("haptic"); },
+    ring: function (on) { return post("ring", { on: !!on }); }
   };
 })(window);

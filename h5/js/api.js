@@ -51,7 +51,7 @@
     setTokens: function (access, refresh, userId) {
       tokens.access = access || "";
       tokens.refresh = refresh || "";
-      me = userId || me;
+      me = String(userId || me || "").toLowerCase();
     },
     signIn: async function (email, password) {
       var data = await auth("/token?grant_type=password", { email: email, password: password });
@@ -114,7 +114,17 @@
     saveProfile: function (name, avatar, cover) {
       return rest("/profiles?id=eq." + me, "PATCH", { name: name, avatar_url: avatar, cover_url: cover });
     },
-    openThread: function (other) { return rpc("open_thread", { other: other }); },
+    openThread: async function (other) {
+      try {
+        return await rpc("open_thread", { other: other });
+      } catch (err) {
+        var low = me < other ? me : other;
+        var high = me < other ? other : me;
+        var found = await rest("/threads?user_low=eq." + low + "&user_high=eq." + high);
+        if (found && found.length) return found[0];
+        return rest("/threads", "POST", { user_low: low, user_high: high });
+      }
+    },
     sendMessage: function (thread, body) {
       return rest("/messages", "POST", { thread_id: thread, sender_id: me, body: body });
     },
