@@ -216,14 +216,15 @@ final class YoohooSession: ObservableObject {
     func register(email: String, password: String, name: String) async throws {
         let trimmed = String(name.prefix(YoohooConfig.nameLimit))
         try await YoohooBackend.signUp(email: email, password: password, name: trimmed)
-        meName = trimmed
-        if let id = YoohooBackend.userID {
-            meID = id.uuidString.lowercased()
-        } else {
+        if YoohooBackend.userID == nil {
             try await YoohooBackend.signIn(email: email, password: password)
-            meID = YoohooBackend.userID?.uuidString.lowercased() ?? ""
         }
-        signedIn = meID.isEmpty == false
+        guard let id = YoohooBackend.userID else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        meName = trimmed
+        meID = id.uuidString.lowercased()
+        signedIn = true
     }
 
     func signInWithApple(token: String, nonce: String, userID: String, fullName: String?) async throws {
@@ -245,11 +246,12 @@ final class YoohooSession: ObservableObject {
         guard let me = UUID(uuidString: meID) else { return }
         var avatarURL = avatarAsset.isEmpty ? nil : avatarAsset
         var coverURL = coverAsset.isEmpty ? nil : coverAsset
+        let folder = me.uuidString.lowercased()
         if let avatar, let data = avatar.jpegData(compressionQuality: 0.82) {
-            avatarURL = try await YoohooBackend.upload(data: data, path: "yoohoo/profiles/\(me.uuidString)-avatar.jpg", type: "image/jpeg")
+            avatarURL = try await YoohooBackend.upload(data: data, path: "\(folder)/avatar.jpg", type: "image/jpeg")
         }
         if let cover, let data = cover.jpegData(compressionQuality: 0.82) {
-            coverURL = try await YoohooBackend.upload(data: data, path: "yoohoo/profiles/\(me.uuidString)-cover.jpg", type: "image/jpeg")
+            coverURL = try await YoohooBackend.upload(data: data, path: "\(folder)/cover.jpg", type: "image/jpeg")
         }
         try await YoohooBackend.saveProfile(id: me, name: String(name.prefix(YoohooConfig.nameLimit)), avatar: avatarURL, cover: coverURL)
         await reload()
@@ -258,12 +260,13 @@ final class YoohooSession: ObservableObject {
     func publishMedia(caption: String, tags: [String] = [], images: [UIImage], video: Data?) async throws {
         guard let me = UUID(uuidString: meID) else { return }
         var urls: [String] = []
+        let folder = me.uuidString.lowercased()
         if let video {
-            urls.append(try await YoohooBackend.upload(data: video, path: "yoohoo/posts/\(UUID().uuidString).mp4", type: "video/mp4"))
+            urls.append(try await YoohooBackend.upload(data: video, path: "\(folder)/posts/\(UUID().uuidString.lowercased()).mp4", type: "video/mp4"))
         } else {
             for image in images.prefix(9) {
                 guard let data = image.jpegData(compressionQuality: 0.82) else { continue }
-                urls.append(try await YoohooBackend.upload(data: data, path: "yoohoo/posts/\(UUID().uuidString).jpg", type: "image/jpeg"))
+                urls.append(try await YoohooBackend.upload(data: data, path: "\(folder)/posts/\(UUID().uuidString.lowercased()).jpg", type: "image/jpeg"))
             }
         }
         try await YoohooBackend.publish(author: me, body: Self.mergeTags(caption, tags), urls: urls, video: video != nil)

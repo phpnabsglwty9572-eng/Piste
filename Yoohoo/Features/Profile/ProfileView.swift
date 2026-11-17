@@ -78,7 +78,7 @@ struct ProfileView: View {
             .frame(maxWidth: .infinity)
             .zIndex(2)
             avatar
-                .padding(.top, 214)
+                .padding(.top, 244)
                 .zIndex(3)
         }
         .frame(maxWidth: .infinity)
@@ -157,51 +157,50 @@ struct ProfileView: View {
                 chatChip
             }
         }
-        .padding(.top, 8)
+        .padding(.top, 14)
+        .frame(maxWidth: .infinity)
     }
 
     private var shopChip: some View {
-        Button { nav.push(.coinShop) } label: {
-            HStack(spacing: 4) {
-                Image("CoinShop").resizable().scaledToFit().frame(width: 44, height: 44)
-                Text("Coin Shop")
-                    .font(YoohooFont.title(18))
-                    .foregroundStyle(.black)
-                    .shadow(color: Color(red: 212 / 255, green: 188 / 255, blue: 0), radius: 0, y: 2)
-            }
-            .padding(.leading, 8)
-            .frame(height: 34)
-            .background(
-                UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 12, bottomLeading: 12, bottomTrailing: 0, topTrailing: 0))
-                    .fill(Color(red: 1, green: 237 / 255, blue: 101 / 255))
-                    .overlay(
-                        UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 12, bottomLeading: 12, bottomTrailing: 0, topTrailing: 0))
-                            .stroke(YoohooColor.blue, lineWidth: 1)
-                    )
-            )
-        }
-        .buttonStyle(PressDownStyle())
+        edgeChip(
+            artwork: "CoinShop",
+            title: "Coin Shop",
+            fill: Color(red: 1, green: 237 / 255, blue: 101 / 255),
+            shadow: Color(red: 212 / 255, green: 188 / 255, blue: 0)
+        ) { nav.push(.coinShop) }
     }
 
     private var chatChip: some View {
-        Button { nav.push(.chat(userID)) } label: {
-            HStack(spacing: 4) {
-                Image("ChatNow").resizable().scaledToFit().frame(width: 44, height: 44)
-                Text("Chat Now")
-                    .font(YoohooFont.title(18))
-                    .foregroundStyle(.black)
-                    .shadow(color: Color(red: 245 / 255, green: 183 / 255, blue: 1), radius: 0, y: 2)
-            }
-            .padding(.leading, 8)
-            .frame(height: 34)
-            .background(
+        edgeChip(
+            artwork: "ChatNow",
+            title: "Chat Now",
+            fill: Color(red: 251 / 255, green: 226 / 255, blue: 1),
+            shadow: Color(red: 245 / 255, green: 183 / 255, blue: 1)
+        ) { nav.push(.chat(userID)) }
+    }
+
+    private func edgeChip(artwork: String, title: String, fill: Color, shadow: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            ZStack(alignment: .topLeading) {
                 UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 12, bottomLeading: 12, bottomTrailing: 0, topTrailing: 0))
-                    .fill(Color(red: 251 / 255, green: 226 / 255, blue: 1))
+                    .fill(fill)
                     .overlay(
                         UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: 12, bottomLeading: 12, bottomTrailing: 0, topTrailing: 0))
                             .stroke(YoohooColor.blue, lineWidth: 1)
                     )
-            )
+                    .frame(width: 121, height: 34)
+                    .offset(x: 10, y: 6)
+                Image(artwork)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 44, height: 44)
+                Text(title)
+                    .font(YoohooFont.title(18))
+                    .foregroundStyle(.black)
+                    .shadow(color: shadow, radius: 0, y: 2)
+                    .offset(x: 44, y: 10)
+            }
+            .frame(width: 131, height: 44, alignment: .topLeading)
         }
         .buttonStyle(PressDownStyle())
     }

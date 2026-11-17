@@ -109,6 +109,7 @@ struct AuthLandingView: View {
         .tint(YoohooColor.ink)
         .lineLimit(1)
         .fixedSize(horizontal: true, vertical: false)
+        .frame(width: 306)
         .frame(width: 375)
     }
 
@@ -295,15 +296,15 @@ struct RegisterPhotosView: View {
                 }
                 .frame(width: 111, height: circle ? 111 : 130)
                 .background(Color.white)
-                .clipShape(photoShape(circle: circle))
-                .overlay(photoShape(circle: circle).stroke(image == nil ? YoohooColor.blue : Color.clear, lineWidth: 1))
+                .clipShape(photoShape(filledCircle: circle && image != nil))
+                .overlay(photoShape(filledCircle: circle && image != nil).stroke(image == nil ? YoohooColor.blue : Color.clear, lineWidth: 1))
             }
             .buttonStyle(PressDownStyle())
         }
     }
 
-    private func photoShape(circle: Bool) -> AnyShape {
-        if circle {
+    private func photoShape(filledCircle: Bool) -> AnyShape {
+        if filledCircle {
             return AnyShape(Circle())
         }
         return AnyShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
