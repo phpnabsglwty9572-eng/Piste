@@ -32,6 +32,10 @@
 			exceptions = (
 				C30000000000000000000070 /* Exceptions for "Yoohoo" folder in "Yoohoo" target */,
 			);
+			explicitFolders = (
+				Hybrid/BundledH5,
+				Hybrid/BundledRN,
+			);
 			path = Yoohoo;
 			sourceTree = "<group>";
 		};

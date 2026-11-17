@@ -67,6 +67,8 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         config.mediaTypesRequiringUserActionForPlayback = []
         config.userContentController.add(self, name: "yoohoo")
         config.userContentController.addUserScript(WKUserScript(source: bootstrapJS(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+        config.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
         let web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
         web.scrollView.bounces = false
@@ -77,8 +79,6 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         if #available(iOS 16.4, *) {
             web.isInspectable = true
         }
-        config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
-        config.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
         return web
     }
 

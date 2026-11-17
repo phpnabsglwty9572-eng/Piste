@@ -32,12 +32,25 @@ enum HotUpdateService {
 
     private static func bundledPaths() -> HotPaths {
         HotPaths(
-            rnIndex: Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Hybrid/BundledRN")
-                ?? Bundle.main.bundleURL.appendingPathComponent("Hybrid/BundledRN/index.html"),
-            h5Index: Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Hybrid/BundledH5")
-                ?? Bundle.main.bundleURL.appendingPathComponent("Hybrid/BundledH5/index.html"),
+            rnIndex: bundledIndex(folder: "BundledRN"),
+            h5Index: bundledIndex(folder: "BundledH5"),
             version: 0
         )
+    }
+
+    private static func bundledIndex(folder: String) -> URL {
+        let names = ["Hybrid/\(folder)", folder]
+        for name in names {
+            if let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: name),
+               FileManager.default.fileExists(atPath: url.path) {
+                return url
+            }
+            let loose = Bundle.main.bundleURL.appendingPathComponent("\(name)/index.html")
+            if FileManager.default.fileExists(atPath: loose.path) {
+                return loose
+            }
+        }
+        return Bundle.main.bundleURL.appendingPathComponent("\(folder)/index.html")
     }
 
     private static func diskRoot(_ version: Int) -> URL {
@@ -61,8 +74,8 @@ enum HotUpdateService {
         let root = diskRoot(release.version)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("rn"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("h5"), withIntermediateDirectories: true)
-        try await pullFolder(release.rnURL, into: root.appendingPathComponent("rn"), fallback: "Hybrid/BundledRN")
-        try await pullFolder(release.h5URL, into: root.appendingPathComponent("h5"), fallback: "Hybrid/BundledH5")
+        try await pullFolder(release.rnURL, into: root.appendingPathComponent("rn"), fallback: "BundledRN")
+        try await pullFolder(release.h5URL, into: root.appendingPathComponent("h5"), fallback: "BundledH5")
         guard let paths = diskPaths(version: release.version) else {
             return bundledPaths()
         }
@@ -94,9 +107,14 @@ enum HotUpdateService {
     }
 
     private static func copyBundle(_ subdirectory: String, to folder: URL) {
-        guard let source = Bundle.main.url(forResource: subdirectory, withExtension: nil) ??
-                Bundle.main.resourceURL?.appendingPathComponent(subdirectory)
-        else { return }
+        let candidates = [
+            Bundle.main.url(forResource: subdirectory, withExtension: nil),
+            Bundle.main.resourceURL?.appendingPathComponent("Hybrid/\(subdirectory)"),
+            Bundle.main.resourceURL?.appendingPathComponent(subdirectory),
+            Bundle.main.bundleURL.appendingPathComponent("Hybrid/\(subdirectory)"),
+            Bundle.main.bundleURL.appendingPathComponent(subdirectory)
+        ]
+        guard let source = candidates.compactMap({ $0 }).first(where: { FileManager.default.fileExists(atPath: $0.path) }) else { return }
         let fm = FileManager.default
         if let items = fm.enumerator(at: source, includingPropertiesForKeys: nil) {
             for case let file as URL in items {
