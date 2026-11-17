@@ -95,7 +95,8 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
             "termsURL": YoohooConfig.termsURL?.absoluteString ?? "",
             "privacyURL": YoohooConfig.privacyURL?.absoluteString ?? "",
             "h5URL": paths?.h5Index.absoluteString ?? "",
-            "hotVersion": NSNumber(value: paths?.version ?? 0)
+            "hotVersion": NSNumber(value: paths?.version ?? 0),
+            "startRoute": UserDefaults.standard.string(forKey: "yoohoo.debug.route") ?? ""
         ]
         let data = (try? JSONSerialization.data(withJSONObject: body)) ?? Data("{}".utf8)
         let json = String(data: data, encoding: .utf8) ?? "{}"
@@ -120,6 +121,7 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         switch type {
         case "ready":
             await pushSession()
+            reply(id, ["ok": true])
         case "mountH5":
             mountH5()
         case "ensureEULA":
@@ -364,6 +366,15 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         let script = "window.dispatchEvent(new MessageEvent('yoohoo-native',{data:\(json)}));"
         rnView.evaluateJavaScript(script, completionHandler: nil)
         h5View?.evaluateJavaScript(script, completionHandler: nil)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === h5View,
+              let route = UserDefaults.standard.string(forKey: "yoohoo.debug.route"),
+              route.isEmpty == false
+        else { return }
+        let escaped = route.replacingOccurrences(of: "'", with: "\\'")
+        webView.evaluateJavaScript("window.goTo && window.goTo('\(escaped)')", completionHandler: nil)
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {

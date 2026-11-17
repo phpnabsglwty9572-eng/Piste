@@ -18,10 +18,10 @@ struct SplashView: View {
         .navigationBarHidden(true)
         .onAppear {
             Task {
-                await session.restore()
-                try? await Task.sleep(nanoseconds: 600_000_000)
-                guard nav.stage == .splash else { return }
+                async let restored: Void = session.restore()
+                try? await Task.sleep(nanoseconds: 700_000_000)
                 nav.enterHybrid()
+                _ = await restored
             }
         }
     }

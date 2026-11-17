@@ -12,18 +12,36 @@ enum HotUpdateService {
 
     static func prepare() async -> HotPaths {
         let bundled = bundledPaths()
+        #if DEBUG
+        return bundled
+        #else
         guard YoohooConfig.backendReady else { return bundled }
-        do {
-            guard let release = try await YoohooBackend.latestHotRelease() else { return bundled }
-            if release.version <= storedVersion, let disk = diskPaths(version: release.version) {
-                return disk
+        return await withTaskGroup(of: HotPaths?.self) { group in
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                return nil
             }
-            let folder = try await download(release)
-            UserDefaults.standard.set(release.version, forKey: versionKey)
-            return folder
-        } catch {
-            return diskPaths(version: storedVersion) ?? bundled
+            group.addTask {
+                do {
+                    guard let release = try await YoohooBackend.latestHotRelease() else { return bundled }
+                    if release.version <= storedVersion, let disk = diskPaths(version: release.version) {
+                        return disk
+                    }
+                    let folder = try await download(release)
+                    UserDefaults.standard.set(release.version, forKey: versionKey)
+                    return folder
+                } catch {
+                    return diskPaths(version: storedVersion) ?? bundled
+                }
+            }
+            var chosen = bundled
+            if let first = await group.next(), let paths = first {
+                chosen = paths
+            }
+            group.cancelAll()
+            return chosen
         }
+        #endif
     }
 
     private static var storedVersion: Int {

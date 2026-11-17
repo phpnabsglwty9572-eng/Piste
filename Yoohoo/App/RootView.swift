@@ -11,6 +11,7 @@ struct RootView: View {
                 SplashView()
             case .hybrid:
                 HybridHostView()
+                    .ignoresSafeArea()
             }
             if session.busy, session.blocksInput {
                 Color.clear
