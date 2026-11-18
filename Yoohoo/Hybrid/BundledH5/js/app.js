@@ -112,6 +112,7 @@
     var env = Bridge.env();
     if (env.accessToken) API.setTokens(env.accessToken, env.refreshToken, "");
     document.getElementById("app").addEventListener("click", onClick);
+    bindChatSwipe();
     document.getElementById("app").addEventListener("submit", onSubmit);
     document.getElementById("app").addEventListener("contextmenu", onHold);
     document.getElementById("app").addEventListener("input", onFormInput);
@@ -448,8 +449,8 @@
   function formChrome(title, back) {
     return '<div class="form-head auth-head">' +
       '<img class="form-sky" src="img/FormSky.png" alt="" />' +
-      '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
-      '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
+      '<img class="form-snow" src="img/SnowHem.png" alt="" />' +
+      '<img class="form-sled" src="img/SledMark.png" alt="" />' +
       '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
       '<div class="form-title">' + title + "</div></div>";
   }
@@ -529,7 +530,7 @@
       '<div class="home-head">' +
         '<img class="home-sky" src="img/HomeSky.png" alt="" />' +
         '<img class="home-cap" src="img/SnowCap.png" alt="" />' +
-        '<img class="home-edge" src="img/SnowEdge.png" alt="" />' +
+        '<img class="home-edge" src="img/SnowHem.png" alt="" />' +
         '<div class="home-marks">' +
           '<img class="home-flake-a" src="img/FlakeA.png" alt="" />' +
           '<img class="home-flake-b" src="img/FlakeB.png" alt="" />' +
@@ -682,8 +683,8 @@
           snowPill("pink" + (state.postFilter === "popular" ? " on" : ""), "post-filter", "popular", "Popular") +
           snowPill("gray" + (state.postFilter === "followed" ? " on" : ""), "post-filter", "followed", "Followed") +
         "</div>" +
-        '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
-        '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
+        '<img class="form-snow" src="img/SnowHem.png" alt="" />' +
+        '<img class="form-sled" src="img/SledMark.png" alt="" />' +
       "</div>" +
       '<div class="scroll home-feed">' + (cards || empty) + "</div></div>";
   }
@@ -725,11 +726,13 @@
         '<span class="hd">' + esc((state.profiles[person.id] || {}).handle || "") + "</span></button>";
     }).join("");
     var rows = state.people.map(function (person) {
-      return '<button class="chat-row" data-act="open-chat" data-id="' + person.id + '">' +
+      return '<div class="chat-swipe">' +
+        '<button class="chat-del" type="button" data-act="ask-delete-chat" data-id="' + person.id + '"><img src="img/ChatTrash.svg" alt="" /></button>' +
+        '<button class="chat-row" data-act="open-chat" data-id="' + person.id + '">' +
         '<img class="av" src="' + esc(person.avatar || "img/SampleAvatar.png") + '" alt="" />' +
         '<span class="meta"><span class="nm">' + esc(person.name) + '</span>' +
         '<span class="pv">' + esc(person.preview) + "</span></span>" +
-        '<span class="tm">' + esc(person.time) + "</span></button>";
+        '<span class="tm">' + esc(person.time) + "</span></button></div>";
     }).join("");
     return '<div class="feed-page">' +
       '<div class="feed-head short">' +
@@ -737,8 +740,8 @@
         '<button class="form-back" data-act="tab" data-id="home"><img src="img/BackButton.svg" alt="" /></button>' +
         '<div class="form-title">Chat</div>' +
         '<button class="gem-chip" data-act="go" data-to="ai"><img src="img/Coin5.png" alt="" /><span>' + gems + '</span><img class="plus" src="img/CoinPlus.svg" alt="" /></button>' +
-        '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
-        '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
+        '<img class="form-snow" src="img/SnowHem.png" alt="" />' +
+        '<img class="form-sled" src="img/SledMark.png" alt="" />' +
       "</div>" +
       '<div class="scroll chat-body">' +
         (chips ? '<div class="friend-row">' + chips + "</div>" : "") +
@@ -830,8 +833,8 @@
           '<div class="form-title">Detail</div>' +
           (post ? '<button class="head-icon like" data-act="like" data-id="' + post.id + '"><img src="img/' + (state.likes.indexOf(post.id) >= 0 ? "LikeOnGlyph.svg" : "FollowGlyph.svg") + '" alt="" /></button>' : "") +
           (post ? '<button class="head-icon more" data-act="about-post" data-id="' + post.id + '"><img src="img/MoreCircle.svg" alt="" /></button>' : "") +
-          '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
-          '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
+          '<img class="form-snow" src="img/SnowHem.png" alt="" />' +
+          '<img class="form-sled" src="img/SledMark.png" alt="" />' +
         "</div>" +
         '<div class="scroll detail-body">' +
           (post ? postCard(post) : "") +
@@ -859,8 +862,8 @@
             snowPill("pink" + (imageTab ? " on" : ""), "compose-kind", "image", "Image") +
             snowPill("gray" + (imageTab ? "" : " on"), "compose-kind", "video", "Video") +
           "</div>" +
-          '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
-          '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
+          '<img class="form-snow" src="img/SnowHem.png" alt="" />' +
+          '<img class="form-sled" src="img/SledMark.png" alt="" />' +
         "</div>" +
         '<form class="form-fields compose-fields" data-form="compose">' +
           '<div class="form-label"><img src="img/FieldBell.png" alt="" />' + (imageTab ? "Image" : "Video") + "</div>" +
@@ -901,8 +904,8 @@
             '<div class="meta"><div class="nm">' + esc(user.name) + '</div><div class="hd">' + esc(user.handle || "") + "</div></div>" +
             (following(state.chat) ? "" : '<button class="plus" data-act="follow" data-id="' + state.chat + '"><img src="img/BadgePlus.png" alt="" /></button>') +
           "</div>" : "") +
-          '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
-          '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
+          '<img class="form-snow" src="img/SnowHem.png" alt="" />' +
+          '<img class="form-sled" src="img/SledMark.png" alt="" />' +
         "</div>" +
         '<div class="scroll chat-thread">' + (lines || emptyPen()) + "</div>" +
         '<form class="chat-enter" data-form="chat">' +
@@ -951,7 +954,7 @@
             '<div class="home-blurb">Fresh snow, cool goggles and endless fun. Let this tiny skier bring warmth and joy to your snowy days.</div>' +
             '<div class="home-penguin"><img src="img/Penguin.png" alt="" /></div>' +
           "</div>" +
-          '<img class="home-edge" src="img/SnowEdge.png" alt="" />' +
+          '<img class="home-edge" src="img/SnowHem.png" alt="" />' +
         "</div>" +
         '<div class="scroll ai-body">' +
           '<div class="form-label"><img src="img/FieldBell.png" alt="" />All Chat</div>' + body +
@@ -998,8 +1001,8 @@
         '<div class="scroll prof-scroll">' +
         '<div class="prof-head">' +
           '<img class="prof-cover" src="' + esc(coverURL) + '" alt="" data-fallback="img/AuthSky.png" />' +
-          '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
-          '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
+          '<img class="form-snow" src="img/SnowHem.png" alt="" />' +
+          '<img class="form-sled" src="img/SledMark.png" alt="" />' +
           '<div class="prof-av">' +
             (face ? '<img class="face" src="' + esc(face) + '" alt="" data-fallback="" />' : "") +
             '<img class="frame" src="img/AvatarFrame.png" alt="" />' +
@@ -1075,8 +1078,8 @@
           '<img class="banner" src="img/CoinBanner.png" alt="" />' +
           '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           '<div class="form-title">Coin Shop</div>' +
-          '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
-          '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
+          '<img class="form-snow" src="img/SnowHem.png" alt="" />' +
+          '<img class="form-sled" src="img/SledMark.png" alt="" />' +
         "</div>" +
         '<div class="scroll shop-grid">' + (packs || emptyPen()) + "</div></div>"
     );
@@ -1263,11 +1266,57 @@
     return n ? n - 1 : 0;
   }
 
+  var chatDrag = { row: null, x: 0, y: 0, moved: false };
+  function bindChatSwipe() {
+    var root = document.getElementById("app");
+    root.addEventListener("touchstart", function (event) {
+      var row = event.target.closest(".chat-swipe");
+      chatDrag.row = row;
+      chatDrag.moved = false;
+      if (!row || !event.touches[0]) return;
+      chatDrag.x = event.touches[0].clientX;
+      chatDrag.y = event.touches[0].clientY;
+    }, { passive: true });
+    root.addEventListener("touchmove", function (event) {
+      if (!chatDrag.row || !event.touches[0]) return;
+      var dx = event.touches[0].clientX - chatDrag.x;
+      var dy = event.touches[0].clientY - chatDrag.y;
+      if (Math.abs(dx) < 10 || Math.abs(dy) > Math.abs(dx)) return;
+      chatDrag.moved = true;
+      chatDrag.row.classList.add("dragging");
+      var base = chatDrag.row.classList.contains("open") ? -64 : 0;
+      var next = Math.max(-64, Math.min(0, base + dx));
+      var face = chatDrag.row.querySelector(".chat-row");
+      if (face) face.style.transform = "translateX(" + next + "px)";
+    }, { passive: true });
+    root.addEventListener("touchend", function () {
+      var row = chatDrag.row;
+      chatDrag.row = null;
+      if (!row) return;
+      var face = row.querySelector(".chat-row");
+      var x = 0;
+      if (face && face.style.transform) {
+        var match = /translateX\((-?\d+)/.exec(face.style.transform);
+        x = match ? Number(match[1]) : 0;
+      }
+      row.classList.remove("dragging");
+      if (face) face.style.transform = "";
+      document.querySelectorAll(".chat-swipe.open").forEach(function (other) {
+        if (other !== row) other.classList.remove("open");
+      });
+      if (x < -32) row.classList.add("open");
+      else row.classList.remove("open");
+    });
+  }
+
   async function onClick(event) {
     var node = event.target.closest("[data-act]");
     if (!node) return;
     var act = node.getAttribute("data-act");
     var id = node.getAttribute("data-id");
+    if (act === "open-chat" && chatDrag.moved) { chatDrag.moved = false; return; }
+    var openRow = node.closest(".chat-swipe.open");
+    if (act === "open-chat" && openRow) { openRow.classList.remove("open"); return; }
     var gated = ["follow","live","like","like-room","open-chat","buy","gift","send-gift","call","compose","ai-prompt","people","pick"].indexOf(act) >= 0
       || (act === "go" && ["compose","shop","edit","settings","ai"].indexOf(node.getAttribute("data-to")) >= 0);
     if (gated && !needAuth()) return;
@@ -1326,7 +1375,15 @@
         if (!loved) Bridge.toast("Liked.");
       }
       else if (act === "open-post") go("post", { post: id });
-      else if (act === "open-chat") { await API.openThread(id); await reload(); go("chat", { chat: id }); }
+      else if (act === "open-chat") {
+        go("chat", { chat: id });
+        API.openThread(id).then(function () { return reload(); }).catch(function () {});
+      }
+      else if (act === "ask-delete-chat") {
+        state.chat = id;
+        state.sheet = "delete-chat";
+        draw();
+      }
       else if (act === "profile") go("profile", { profile: id });
       else if (act === "people") go("people", { peopleKind: id });
       else if (act === "legal") await Bridge.legal(id);
@@ -1427,7 +1484,11 @@
       }
       else if (act === "confirm-delete-chat") {
         if (state.threads[state.chat]) await API.hideThread(state.threads[state.chat]);
-        state.sheet = null; await reload(); Bridge.toast("Deleted."); back();
+        state.sheet = null;
+        var stay = state.route === "main";
+        await reload();
+        Bridge.toast("Deleted.");
+        if (!stay) back();
       }
       else if (act === "confirm-block") {
         await API.block(state.reportTarget); state.sheet = null; await reload(); Bridge.toast("Blocked."); back();

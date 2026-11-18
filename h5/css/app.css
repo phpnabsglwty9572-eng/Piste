@@ -159,7 +159,9 @@ input, textarea { -webkit-appearance: none; border-radius: 0; }
   flex-shrink: 0;
   overflow: visible;
   z-index: 1;
+  background: #fff;
 }
+.form-head .form-sky { height: 100%; }
 .form-head.auth-head {
   height: 118px;
   overflow: hidden;
@@ -170,21 +172,21 @@ input, textarea { -webkit-appearance: none; border-radius: 0; }
   object-fit: cover; object-position: top;
   width: 100%;
 }
-.auth-head .form-sky { height: 177px; }
-.auth-head .form-snow,
-.auth-head .form-sled { top: 86px; }
+.auth-head .form-sky { height: 100%; }
 .auth-head .form-back { top: 36px; }
 .auth-head .form-title { top: 39px; }
 .form-page:has(.auth-head) .form-foot { margin-top: auto; }
 .form-snow {
-  position: absolute; left: 0; right: 0; top: 84px; height: 32px;
-  object-fit: cover; object-position: center;
+  position: absolute; left: 0; right: 0; top: auto; bottom: 0; height: 24px;
+  object-fit: cover; object-position: center bottom;
   width: 100%;
   z-index: 2;
   pointer-events: none;
 }
 .form-sled {
-  position: absolute; left: 327px; top: 86px; width: 32px; height: 32px;
+  position: absolute; left: auto; right: 16px; top: auto; bottom: 0;
+  width: 32px; height: 32px; object-fit: contain; object-position: right bottom;
+  z-index: 3;
 }
 .form-back {
   position: absolute; left: 16px; top: 36px;
@@ -239,9 +241,10 @@ input, textarea { -webkit-appearance: none; border-radius: 0; }
   position: relative;
   height: 284px;
   flex-shrink: 0;
+  background: #fff;
 }
 .home-sky {
-  position: absolute; left: 0; top: 0; width: 100%; height: 248px;
+  position: absolute; left: 0; top: 0; width: 100%; height: 263px;
   object-fit: cover; object-position: top;
 }
 .home-cap {
@@ -249,9 +252,9 @@ input, textarea { -webkit-appearance: none; border-radius: 0; }
   object-fit: cover; object-position: top;
 }
 .home-edge {
-  position: absolute; left: 0; top: 232px; width: 100%; height: 32px;
-  object-fit: cover; object-position: center;
-  pointer-events: none;
+  position: absolute; left: 0; top: 239px; width: 100%; height: 24px;
+  object-fit: cover; object-position: center bottom;
+  pointer-events: none; z-index: 2;
 }
 .home-marks { position: absolute; left: 50%; margin-left: -187.5px; top: 0; width: 375px; height: 284px; }
 .home-title {
@@ -375,18 +378,15 @@ input, textarea { -webkit-appearance: none; border-radius: 0; }
 }
 .feed-head {
   position: relative;
-  height: 198px;
+  height: 168px;
   flex-shrink: 0;
   overflow: visible;
   z-index: 1;
+  background: #fff;
 }
-.feed-head .form-sky { height: 182px; }
-.feed-head .form-snow { top: 166px; }
-.feed-head .form-sled { top: 168px; }
-.feed-head.short { height: 116px; }
-.feed-head.short .form-sky { height: 100px; }
-.feed-head.short .form-snow { top: 84px; }
-.feed-head.short .form-sled { top: 86px; }
+.feed-head .form-sky { height: 100%; }
+.feed-head.short { height: 118px; }
+.feed-head.short .form-sky { height: 100%; }
 .post-chip {
   position: absolute; right: 16px; left: auto; top: 36px;
   width: 112px; height: 34px;
@@ -471,11 +471,25 @@ input, textarea { -webkit-appearance: none; border-radius: 0; }
 .friend-card .tick { position: absolute; right: -2px; bottom: -2px; width: 14px; height: 14px; }
 .friend-card .nm { font-weight: 800; font-size: 12px; margin-top: 6px; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .friend-card .hd { font-size: 10px; color: var(--gray); max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-swipe {
+  position: relative; width: 343px; height: 45px; margin: 8px 0 0; overflow: hidden;
+}
+.chat-del {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 64px;
+  border: 0; border-radius: 12px; background: #ff3b30; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.chat-del img { width: 23px; height: 23px; }
 .chat-row {
-  width: 343px; height: 45px; margin: 8px 0 0;
+  position: relative; z-index: 1;
+  width: 343px; height: 45px; margin: 0;
   border: 0; background: #fff; padding: 0;
   display: flex; align-items: center; gap: 8px; text-align: left;
+  transform: translateX(0);
+  transition: transform .18s ease;
 }
+.chat-swipe.dragging .chat-row { transition: none; }
+.chat-swipe.open .chat-row { transform: translateX(-64px); }
 .chat-row .av { width: 45px; height: 45px; border-radius: 22px; object-fit: cover; }
 .chat-row .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .chat-row .nm { font-weight: 800; font-size: 16px; line-height: 20px; }
@@ -576,7 +590,7 @@ input, textarea { -webkit-appearance: none; border-radius: 0; }
 .pink-enter img { width: 22px; height: 22px; }
 .pink-enter.tight { margin: 0; width: 251px; }
 
-.compose-head { height: 198px; }
+.compose-head { height: 168px; }
 .compose-fields { padding: 8px 16px 0; }
 .form-area {
   margin-top: 8px; width: 343px; height: 100px;
@@ -594,7 +608,7 @@ input, textarea { -webkit-appearance: none; border-radius: 0; }
   padding: 0 8px 0 4px; border-radius: 12px 0 0 12px;
   background: rgba(0,0,0,.5); border: 1px solid var(--yellow); color: #fff;
 }
-.head-host .av { width: 33px; height: 33px; border-radius: 10px; object-fit: cover; border: 1px solid #fff; }
+.head-host .av { width: 33px; height: 33px; border-radius: 8px; object-fit: cover; border: 2px solid var(--yellow); }
 .head-host .meta { margin-left: 4px; }
 .head-host .nm { font-weight: 800; font-size: 16px; line-height: 18px; }
 .head-host .hd { font-size: 12px; font-weight: 500; }
@@ -706,8 +720,8 @@ input, textarea { -webkit-appearance: none; border-radius: 0; }
 }
 .prof-cover { width: 100%; height: 305px; object-fit: cover; display: block; }
 .prof-head .form-snow {
-  top: auto; bottom: 0; height: 19px;
-  object-position: center 44%;
+  top: auto; bottom: 0; height: 24px;
+  object-position: center bottom;
   z-index: 2;
 }
 .prof-head .form-sled { top: auto; bottom: 0; left: auto; right: 16px; z-index: 3; }
@@ -790,10 +804,10 @@ input, textarea { -webkit-appearance: none; border-radius: 0; }
 }
 .shop-head .banner {
   position: absolute; left: 0; right: 0; top: 0; width: 100%;
-  height: 210px;
+  height: 215px;
   object-fit: cover; object-position: center top; display: block;
 }
-.shop-head .form-snow { top: auto; bottom: 0; height: 19px; object-position: center 44%; z-index: 2; }
+.shop-head .form-snow { top: auto; bottom: 0; height: 24px; object-position: center bottom; z-index: 2; }
 .shop-head .form-sled { top: auto; bottom: 0; left: auto; right: 16px; z-index: 3; }
 .shop-head .form-back { top: 36px; z-index: 4; }
 .shop-head .form-title { top: 39px; z-index: 4; }
@@ -867,7 +881,7 @@ input, textarea { -webkit-appearance: none; border-radius: 0; }
 .gift-fx .who { margin-left: 6px; font-size: 12px; font-weight: 500; color: #111; }
 
 .ai-head { height: 260px; }
-.ai-head .home-edge { top: 241px; }
+.ai-head .home-edge { top: 239px; }
 .ai-head .home-penguin img { width: 150px; height: 140px; object-fit: cover; display: block; }
 .pegu-chip {
   position: absolute; left: 58px; top: 36px; z-index: 3;
