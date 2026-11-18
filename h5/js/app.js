@@ -12,6 +12,7 @@
     follows: [],
     blocks: [],
     likes: [],
+    roomLikes: [],
     people: [],
     lines: {},
     threads: {},
@@ -67,7 +68,36 @@
   }
   function blocked(id) { return state.blocks.indexOf(id) >= 0; }
   function following(id) {
-    return state.follows.some(function (row) { return row.follower === API.me() && row.followee === id; });
+    id = String(id || "").toLowerCase();
+    var me = API.me();
+    return state.follows.some(function (row) { return row.follower === me && row.followee === id; });
+  }
+  function rememberFollow(id, on) {
+    var me = API.me();
+    id = String(id || "").toLowerCase();
+    state.follows = state.follows.filter(function (row) { return !(row.follower === me && row.followee === id); });
+    if (on) state.follows.push({ follower: me, followee: id });
+  }
+  function rememberLike(id, on) {
+    id = String(id || "").toLowerCase();
+    var index = state.likes.indexOf(id);
+    if (on && index < 0) state.likes.push(id);
+    if (!on && index >= 0) state.likes.splice(index, 1);
+  }
+  function roomLikeKey() { return "yoohoo.roomLikes." + (API.me() || "anon"); }
+  function loadRoomLikes() {
+    try { state.roomLikes = JSON.parse(localStorage.getItem(roomLikeKey()) || "[]"); }
+    catch (err) { state.roomLikes = []; }
+    if (!Array.isArray(state.roomLikes)) state.roomLikes = [];
+    state.roomLikes = state.roomLikes.map(function (id) { return String(id || "").toLowerCase(); });
+  }
+  function saveRoomLikes() {
+    try { localStorage.setItem(roomLikeKey(), JSON.stringify(state.roomLikes)); } catch (err) {}
+  }
+  function roomLiked(id) { return state.roomLikes.indexOf(String(id || "").toLowerCase()) >= 0; }
+  function alreadyThere(err) {
+    var msg = (err && err.message) || "";
+    return msg.indexOf("duplicate") >= 0 || msg.indexOf("23505") >= 0;
   }
 
   async function boot() {
@@ -140,7 +170,7 @@
       if (!keepAuth) settle();
       try {
         await reload();
-        if (["posts","posts-followed","chats","live","gift","post","compose","chat","profile","settings","shop","followed","fans","block","edit","feedback","logout","erase","about","audience","report","tag","ai","call","giftfx","about-post","about-chat","video","delete-post","delete-chat","live-block","register2"].indexOf(start) >= 0) window.goTo(start);
+        if (["posts","posts-followed","chats","live","gift","post","compose","chat","profile","settings","shop","followed","fans","block","edit","feedback","logout","erase","about","audience","report","tag","ai","call","giftfx","about-post","about-chat","video","delete-post","delete-chat","live-block","register2","other","detail"].indexOf(start) >= 0) window.goTo(start);
         else if (!keepAuth) go("main");
       } catch (err) { if (!keepAuth) go("auth"); }
       settle();
@@ -175,8 +205,11 @@
     state.me.gems = payload.coins || 0;
     var pinned = (Bridge.env().startRoute || "");
     var keepAuth = ["auth", "signin", "register", "register2"].indexOf(pinned) >= 0;
-    if (payload.signedIn && !keepAuth && (state.route === "auth" || state.route === "signin" || state.route === "register" || state.route === "register2")) {
+    var onAuth = state.route === "auth" || state.route === "signin" || state.route === "register" || state.route === "register2";
+    if (payload.signedIn && !keepAuth && onAuth) {
       reload().then(function () { stack = []; go("main"); }).catch(function () {});
+    } else if (payload.signedIn && !state.ready && !onAuth) {
+      reload().then(function () { if (pinned) window.goTo(pinned); }).catch(function () {});
     }
     if (payload.signedIn === false && state.route !== "auth" && state.route !== "signin" && state.route !== "register" && state.route !== "register2") {
       stack = [];
@@ -204,6 +237,7 @@
     var ids = Object.keys(map);
     state.profiles = map;
     state.me = map[API.me()] || state.me;
+    loadRoomLikes();
     if (API.me() && map[API.me()]) {
       API.setTokens(API.tokens().access, API.tokens().refresh, API.me());
     } else if (profiles.length && !API.me()) {
@@ -285,6 +319,13 @@
     else if (route === "live-block") { go("live"); state.sheet = "blacklist"; draw(); }
     else if (route === "home") { state.tab = "home"; go("main"); }
     else if (route === "home-about") { state.tab = "home"; go("main"); state.sheet = "logout"; draw(); }
+    else if (route === "other") {
+      var otherId = Object.keys(state.profiles).filter(function (key) { return key && key !== API.me(); })[0];
+      if (otherId) go("profile", { profile: otherId });
+    }
+    else if (route === "detail") {
+      if (state.posts[0]) go("post", { post: state.posts[0].id });
+    }
   };
   function snap() {
     return {
@@ -509,6 +550,7 @@
     var user = state.profiles[room.owner_id] || {};
     var photo = room.cover_url || "img/LiveStage.png";
     var followed = following(room.owner_id);
+    var loved = roomLiked(room.id);
     var split = splitTags(room.title || "");
     return '<article class="live-card">' +
       '<div class="live-photo">' +
@@ -521,7 +563,7 @@
             '<div class="meta"><div class="nm">' + esc(user.name || "") + '</div><div class="hd">' + esc(user.handle || "") + "</div></div>" +
             (followed ? "" : '<button class="plus" data-act="follow" data-id="' + room.owner_id + '"><img src="img/BadgePlus.png" alt="" /></button>') +
           "</div>" +
-          '<button class="icon34" data-act="follow" data-id="' + room.owner_id + '"><img src="img/' + (followed ? "FollowedGlyph.svg" : "FollowGlyph.svg") + '" alt="" /></button>' +
+          '<button class="icon34" data-act="like-room" data-id="' + room.id + '"><img src="img/' + (loved ? "LikeOnGlyph.svg" : "FollowGlyph.svg") + '" alt="" /></button>' +
           '<button class="icon34" data-act="about-person" data-id="' + room.owner_id + '"><img src="img/MoreGlyph.svg" alt="" /></button>' +
         "</div></div>" +
       '<div class="caption">' + esc(split.caption) + "</div>" +
@@ -612,6 +654,16 @@
     return '<div class="empty-pen' + (size ? " " + size : "") + '"><img class="pen" src="img/Penguin.png" alt="" />' + note + "</div>";
   }
 
+  function snowPill(kind, act, id, label) {
+    return '<button class="pill ' + kind + '" type="button" data-act="' + act + '" data-id="' + id + '">' +
+      '<img class="hem" src="img/PillHem.svg" alt="" />' +
+      '<img class="cap left" src="img/PillCapLeft.svg" alt="" />' +
+      '<img class="cap right" src="img/PillCapRight.svg" alt="" />' +
+      '<img class="flake" src="img/SnowmanBody.svg" alt="" />' +
+      "<span>" + label + "</span>" +
+      '<img class="man" src="img/PillSnowman.svg" alt="" /></button>';
+  }
+
   function postList() {
     var mine = API.me();
     var rows = state.posts;
@@ -627,8 +679,8 @@
         '<div class="form-title">Post</div>' +
         '<button class="post-chip" data-act="go" data-to="compose"><img class="badge" src="img/PostBadge.png" alt="" /><span>POST</span><img class="pen" src="img/Pencil.svg" alt="" /></button>' +
         '<div class="post-pills">' +
-          '<button class="pill pink' + (state.postFilter === "popular" ? " on" : "") + '" data-act="post-filter" data-id="popular">Popular</button>' +
-          '<button class="pill gray' + (state.postFilter === "followed" ? " on" : "") + '" data-act="post-filter" data-id="followed">Followed</button>' +
+          snowPill("pink" + (state.postFilter === "popular" ? " on" : ""), "post-filter", "popular", "Popular") +
+          snowPill("gray" + (state.postFilter === "followed" ? " on" : ""), "post-filter", "followed", "Followed") +
         "</div>" +
         '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
         '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
@@ -804,8 +856,8 @@
           '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           '<div class="form-title">Create post</div>' +
           '<div class="post-pills compose-pills">' +
-            '<button class="pill pink' + (imageTab ? " on" : "") + '" type="button" data-act="compose-kind" data-id="image">Image</button>' +
-            '<button class="pill gray' + (imageTab ? "" : " on") + '" type="button" data-act="compose-kind" data-id="video">Video</button>' +
+            snowPill("pink" + (imageTab ? " on" : ""), "compose-kind", "image", "Image") +
+            snowPill("gray" + (imageTab ? "" : " on"), "compose-kind", "video", "Video") +
           "</div>" +
           '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
           '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
@@ -936,13 +988,16 @@
     var cards = posts.map(postCard).join("");
     var empty = emptyPen();
     return el(
-      '<div class="form-page">' +
-        '<div class="prof-head">' +
-          '<img class="prof-cover" src="' + esc(coverURL) + '" alt="" data-fallback="img/AuthSky.png" />' +
+      '<div class="form-page profile-page">' +
+        '<div class="prof-bar">' +
           '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           (mine
             ? '<button class="head-icon more" data-act="go" data-to="settings"><img src="img/SettingsIcon.svg" alt="" /></button>'
             : '<button class="head-icon more" data-act="about-person" data-id="' + esc(id || "") + '"><img src="img/MoreCircle.svg" alt="" /></button>') +
+        "</div>" +
+        '<div class="scroll prof-scroll">' +
+        '<div class="prof-head">' +
+          '<img class="prof-cover" src="' + esc(coverURL) + '" alt="" data-fallback="img/AuthSky.png" />' +
           '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
           '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
           '<div class="prof-av">' +
@@ -950,10 +1005,10 @@
             '<img class="frame" src="img/AvatarFrame.png" alt="" />' +
             (mine
               ? '<button class="edit" data-act="go" data-to="edit"><img src="img/ProfileEdit.svg" alt="" /></button>'
-              : (id && !following(id) ? '<button class="edit plus" data-act="follow" data-id="' + esc(id) + '"><img src="img/BadgePlus.png" alt="" /></button>' : "")) +
+              : (id ? '<button class="edit plus' + (following(id) ? " on" : "") + '" data-act="follow" data-id="' + esc(id) + '"><img src="img/' + (following(id) ? "FollowedGlyph.svg" : "BadgePlus.png") + '" alt="" /></button>' : "")) +
           "</div>" +
         "</div>" +
-        '<div class="scroll prof-body">' +
+        '<div class="prof-body">' +
           '<div class="prof-id">' +
             '<div class="prof-name">' + esc(user.name || "") + "</div>" +
             '<div class="prof-handle">' + esc(user.handle || "") + "</div>" +
@@ -973,7 +1028,7 @@
             '<button class="pill gray' + (state.profileTab === "like" ? " on" : "") + '" data-act="profile-tab" data-id="like"><img class="flake" src="img/SnowmanBody.svg" alt="" /><span>Like</span><img class="man" src="img/PillSnowman.svg" alt="" /></button>' +
           "</div>" +
           (cards || empty) +
-        "</div></div>"
+        "</div></div></div>"
     );
   }
 
@@ -1213,10 +1268,12 @@
     if (!node) return;
     var act = node.getAttribute("data-act");
     var id = node.getAttribute("data-id");
-    var gated = ["follow","live","like","open-chat","buy","gift","send-gift","call","compose","ai-prompt","people","pick"].indexOf(act) >= 0
+    var gated = ["follow","live","like","like-room","open-chat","buy","gift","send-gift","call","compose","ai-prompt","people","pick"].indexOf(act) >= 0
       || (act === "go" && ["compose","shop","edit","settings","ai"].indexOf(node.getAttribute("data-to")) >= 0);
     if (gated && !needAuth()) return;
-    if (busy && ["follow","like","buy","live","open-chat","confirm-block","confirm-delete-post","confirm-delete-chat","send-gift"].indexOf(act) >= 0) return;
+    if (busy && ["follow","like","like-room","buy","live","open-chat","confirm-block","confirm-delete-post","confirm-delete-chat","send-gift"].indexOf(act) >= 0) return;
+    var locking = act === "follow" || act === "like" || act === "like-room";
+    if (locking) busy = true;
     try {
       if (act === "back") back();
       else if (act === "go") {
@@ -1228,9 +1285,15 @@
       else if (act === "apple") await apple();
       else if (act === "agree") { await Bridge.eula(); go("auth"); }
       else if (act === "follow") {
-        var on = !following(id);
-        await API.setFollow(id, on);
-        await reload();
+        var who = String(id || "").toLowerCase();
+        if (!who || who === API.me()) return;
+        var on = !following(who);
+        rememberFollow(who, on);
+        draw();
+        try { await API.setFollow(who, on); }
+        catch (err) {
+          if (!alreadyThere(err)) { rememberFollow(who, !on); draw(); throw err; }
+        }
         Bridge.toast(on ? "Followed." : "Unfollowed.");
       }
       else if (act === "live") {
@@ -1242,10 +1305,25 @@
         go("live", { live: id });
       }
       else if (act === "like") {
-        var liked = state.likes.indexOf(id) < 0;
-        await API.like(id, liked);
-        await reload();
+        var pid = String(id || "").toLowerCase();
+        var liked = state.likes.indexOf(pid) < 0;
+        rememberLike(pid, liked);
+        draw();
+        try { await API.like(pid, liked); }
+        catch (err) {
+          if (!alreadyThere(err)) { rememberLike(pid, !liked); draw(); throw err; }
+        }
         if (liked) Bridge.toast("Liked.");
+      }
+      else if (act === "like-room") {
+        var rid = String(id || "").toLowerCase();
+        var loved = roomLiked(rid);
+        state.roomLikes = loved
+          ? state.roomLikes.filter(function (item) { return item !== rid; })
+          : state.roomLikes.concat([rid]);
+        saveRoomLikes();
+        draw();
+        if (!loved) Bridge.toast("Liked.");
       }
       else if (act === "open-post") go("post", { post: id });
       else if (act === "open-chat") { await API.openThread(id); await reload(); go("chat", { chat: id }); }
@@ -1359,6 +1437,8 @@
       else if (act === "erase") { state.sheet = "erase"; draw(); }
     } catch (err) {
       Bridge.toast(err.message || String(err));
+    } finally {
+      if (locking) busy = false;
     }
   }
 
