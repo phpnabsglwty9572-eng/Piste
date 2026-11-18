@@ -6,10 +6,10 @@
   function url() { return env().supabaseURL || ""; }
   function key() { return env().supabaseKey || ""; }
 
-  function headers(json) {
+  function headers(json, prefer) {
     var h = { apikey: key(), Authorization: "Bearer " + (tokens.access || key()) };
     if (json) h["Content-Type"] = "application/json";
-    h.Prefer = "return=representation";
+    h.Prefer = prefer || "return=representation";
     return h;
   }
 
@@ -28,8 +28,8 @@
     return req("/auth/v1" + path, { method: "POST", headers: headers(true), body: JSON.stringify(body) });
   }
 
-  async function rest(path, method, body) {
-    var options = { method: method || "GET", headers: headers(!!body) };
+  async function rest(path, method, body, prefer) {
+    var options = { method: method || "GET", headers: headers(!!body, prefer) };
     if (body) options.body = JSON.stringify(body);
     return req("/rest/v1" + path, options);
   }
@@ -38,10 +38,10 @@
     return rest("/rpc/" + name, "POST", body || {});
   }
 
-  async function firstInsert(path, rows) {
+  async function firstInsert(path, rows, prefer) {
     var last = null;
     for (var i = 0; i < rows.length; i++) {
-      try { return await rest(path, "POST", rows[i]); }
+      try { return await rest(path, "POST", rows[i], prefer); }
       catch (err) {
         last = err;
         var msg = String(err && err.message || "");
@@ -179,7 +179,13 @@
         { user_id: me, target_id: target, body: text }
       ]);
     },
-    feedback: function (body) { return rest("/feedback", "POST", { user_id: me, body: body }); },
+    feedback: function (body) {
+      return firstInsert("/feedback", [
+        { user_id: me, body: body },
+        { user_id: me, content: body },
+        { user_id: me, message: body }
+      ], "return=minimal");
+    },
     joinRoom: function (room) { return rest("/room_members", "POST", { room_id: room, user_id: me }); },
     roomMembers: function (room) { return rest("/room_members?room_id=eq." + room); },
     roomMessages: function (room) { return rest("/room_messages?room_id=eq." + room + "&order=created_at.asc"); },

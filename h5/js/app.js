@@ -61,19 +61,10 @@
         "Have you ever tried night skiing? I heard the lights on the slope look beautiful."
       ],
       reply: "No. You can rent large items such as skis, ski boots and ski poles at the resort. Only buy personal and safety items like a helmet, goggles and base layers."
-    },
-    {
-      id: "d584bdef-394d-441e-86b0-ab252deb058d",
-      name: "Yoohoo",
-      handle: "@yoohoo.mascot",
-      avatar: "img/AuthLogo.png",
-      preview: "Yoohoo!",
-      title: "Yoohoo!",
-      blurb: "",
-      prompts: ["Yoohoo!"],
-      reply: "Yoohoo!"
     }
   ];
+  var REMOVED_IDS = { "d584bdef-394d-441e-86b0-ab252deb058d": 1 };
+  function goneUser(id) { return !!REMOVED_IDS[String(id || "").toLowerCase()]; }
 
   function aiRole(id) {
     return AI_ROLES.filter(function (role) { return role.id === id; })[0] || null;
@@ -294,6 +285,7 @@
     var map = {};
     profiles.forEach(function (row) {
       row.id = String(row.id || "").toLowerCase();
+      if (goneUser(row.id)) return;
       map[row.id] = row;
     });
     AI_ROLES.forEach(function (role) {
@@ -321,7 +313,7 @@
       row.follower = String(row.follower || "").toLowerCase();
       row.followee = String(row.followee || "").toLowerCase();
       return row;
-    });
+    }).filter(function (row) { return !goneUser(row.follower) && !goneUser(row.followee); });
     state.blocks = (await API.blocks() || []).map(function (row) {
       var mine = String(row.blocker || row.blocker_id || "").toLowerCase();
       if (mine && mine !== String(API.me() || "").toLowerCase()) return "";
@@ -340,10 +332,10 @@
     messages.forEach(function (row) { lower(row, "thread_id"); lower(row, "sender_id"); });
     state.blocks = state.blocks.map(function (id) { return String(id).toLowerCase(); });
     state.likes = state.likes.map(function (id) { return String(id).toLowerCase(); });
-    state.posts = posts.filter(function (row) { return !blocked(row.author_id); });
-    state.rooms = rooms.filter(function (row) { return !blocked(row.owner_id); });
+    state.posts = posts.filter(function (row) { return !blocked(row.author_id) && !goneUser(row.author_id); });
+    state.rooms = rooms.filter(function (row) { return !blocked(row.owner_id) && !goneUser(row.owner_id); });
     ensureCatalog();
-    state.comments = comments.filter(function (row) { return !blocked(row.author_id); });
+    state.comments = comments.filter(function (row) { return !blocked(row.author_id) && !goneUser(row.author_id); });
     state.threads = {};
     state.people = [];
     state.lines = {};
@@ -364,7 +356,7 @@
     }
     threads.forEach(function (thread) {
       var other = thread.user_low === me ? thread.user_high : thread.user_low;
-      if (blocked(other) || !map[other]) return;
+      if (blocked(other) || goneUser(other) || !map[other]) return;
       state.threads[other] = thread.id;
       var rows = messages.filter(function (item) { return item.thread_id === thread.id; });
       state.lines[other] = rows;
@@ -629,8 +621,9 @@
   function watchPhotos(root) {
     root.querySelectorAll("img").forEach(function (img) {
       if (img.dataset.wait === "1") return;
+      if (img.classList.contains("frame") || img.classList.contains("tick") || img.classList.contains("edit")) return;
       var src = img.getAttribute("src") || "";
-      var avatar = img.classList.contains("av") || img.classList.contains("face") || img.classList.contains("prof-cover");
+      var avatar = img.classList.contains("av") || img.classList.contains("face") || !!img.closest(".people-row, .pegu-chip, .viewers");
       var remote = src.indexOf("/storage/") >= 0 || src.indexOf("supabase.co") >= 0;
       if (!avatar && !remote) return;
       img.dataset.wait = "1";
@@ -638,17 +631,30 @@
       var parent = img.parentElement;
       var style = window.getComputedStyle(img);
       var hostStyle = parent ? window.getComputedStyle(parent) : null;
-      var fills = hostStyle && style.display === "block" && img.offsetWidth > 48 && Math.abs(img.offsetWidth - parent.clientWidth) < 2;
       var box = null;
-      if ((style.position === "absolute" || fills) && parent) {
-        parent.classList.add("wait-host");
-        if (hostStyle.position === "static") parent.classList.add("pin");
-        box = parent;
-      } else if (parent) {
-        box = document.createElement("span");
-        box.className = "wait-photo";
-        parent.insertBefore(box, img);
-        box.appendChild(img);
+      if (avatar) {
+        img.classList.add("avatar-wait");
+        if (style.position === "absolute" && parent) {
+          parent.classList.add("wait-avatar");
+          box = parent;
+        } else if (parent) {
+          box = document.createElement("span");
+          box.className = "wait-avatar";
+          parent.insertBefore(box, img);
+          box.appendChild(img);
+        }
+      } else {
+        var fills = hostStyle && style.display === "block" && img.offsetWidth > 48 && Math.abs(img.offsetWidth - parent.clientWidth) < 2;
+        if ((style.position === "absolute" || fills) && parent) {
+          parent.classList.add("wait-host");
+          if (hostStyle.position === "static") parent.classList.add("pin");
+          box = parent;
+        } else if (parent) {
+          box = document.createElement("span");
+          box.className = "wait-photo";
+          parent.insertBefore(box, img);
+          box.appendChild(img);
+        }
       }
       function done() {
         img.classList.remove("pending");
@@ -1024,7 +1030,7 @@
         time: ""
       };
     });
-    return bots.concat(state.people.map(function (person) {
+    return bots.concat(state.people.filter(function (person) { return !goneUser(person.id); }).map(function (person) {
       person.handle = (state.profiles[person.id] || {}).handle || "";
       return person;
     }));
@@ -2259,7 +2265,13 @@
         await reload();
         Bridge.toast("Saved.");
         go("profile", { profile: API.me() });
-      } else if (kind === "feedback") { await API.feedback(body); state.sheet = null; Bridge.toast("Sent."); draw(); }
+      } else if (kind === "feedback") {
+        if (!body) { Bridge.toast("Please enter..."); return; }
+        await API.feedback(body);
+        state.sheet = null;
+        Bridge.toast("Sent.");
+        draw();
+      }
       else if (kind === "report") {
         try { await API.report(state.reportTarget, String(data.get("reason") || body)); }
         catch (err) { if (!alreadyThere(err)) throw err; }

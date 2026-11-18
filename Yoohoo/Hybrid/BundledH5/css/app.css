@@ -56,12 +56,23 @@ input, textarea { -webkit-appearance: none; border-radius: 0; }
 }
 .preview img, .preview video { max-width: 100%; max-height: 100%; object-fit: contain; }
 .shine,
-img.pending {
+img.pending:not(.avatar-wait) {
   background: linear-gradient(100deg, #d7ebff 30%, #fff 50%, #d7ebff 70%);
   background-size: 220% 100%;
   animation: shine 1.05s linear infinite;
 }
 img.pending { opacity: 0; }
+img.avatar-wait { background: none; animation: none; }
+.wait-avatar { position: relative; display: inline-block; line-height: 0; vertical-align: top; }
+.wait-avatar::after {
+  content: "";
+  position: absolute; left: 50%; top: 50%; z-index: 6;
+  width: 16px; height: 16px; margin: -8px 0 0 -8px;
+  border-radius: 50%; border: 2px solid rgba(42,117,238,.28); border-top-color: #2a75ee;
+  animation: stage-spin .7s linear infinite; pointer-events: none;
+}
+.wait-avatar.ready::after { display: none; }
+.viewers .wait-avatar::after { width: 12px; height: 12px; margin: -6px 0 0 -6px; border-color: rgba(255,255,255,.35); border-top-color: #fff; }
 .wait-photo { position: relative; display: inline-block; overflow: hidden; line-height: 0; vertical-align: top; max-width: 100%; }
 .wait-host.pin { position: relative; }
 .wait-photo::after,
@@ -609,11 +620,15 @@ img.pending { opacity: 0; }
   display: flex; align-items: center;
   border: 0; padding: 0; background: none;
 }
-.live-room .viewers img {
-  width: 24px; height: 24px; border-radius: 12px; border: 1px solid #fff;
-  margin-left: -8px; object-fit: cover;
+.live-room .viewers img,
+.live-room .viewers .wait-avatar {
+  width: 24px; height: 24px; border-radius: 12px;
 }
-.live-room .viewers img:first-child { margin-left: 0; }
+.live-room .viewers img {
+  border: 1px solid #fff; object-fit: cover; margin-left: 0;
+}
+.live-room .viewers .wait-avatar { margin-left: -8px; }
+.live-room .viewers .wait-avatar:first-child { margin-left: 0; }
 .live-room .viewers .count {
   margin-left: 6px; color: #fff; font-weight: 800; font-size: 12px;
 }
@@ -953,7 +968,8 @@ img.pending { opacity: 0; }
   display: flex; align-items: center; gap: 8px; padding: 0 8px;
   background: #fff; text-align: left; font: inherit; color: inherit;
 }
-.people-row img { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; }
+.people-row img, .people-row .wait-avatar { width: 40px; height: 40px; border-radius: 10px; flex: none; }
+.people-row img { object-fit: cover; }
 .people-row .meta { flex: 1; display: flex; flex-direction: column; }
 .people-row .meta b { font-size: 16px; }
 .people-row .meta span { font-size: 12px; color: var(--gray); }
