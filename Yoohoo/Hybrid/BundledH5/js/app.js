@@ -214,12 +214,13 @@
     function settle() {
       if (settled) return;
       settled = true;
-      Bridge.post("settled");
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { Bridge.post("settled"); });
+      });
     }
     window.__settle = settle;
     var keepAuth = ["auth", "signin", "register", "register2"].indexOf(start) >= 0;
     if (env.accessToken) {
-      if (!keepAuth) settle();
       try {
         await reload();
         if (["posts","posts-followed","chats","live","gift","post","compose","chat","profile","settings","shop","followed","fans","block","edit","feedback","logout","erase","about","audience","report","tag","ai","call","giftfx","about-post","about-chat","video","delete-post","delete-chat","live-block","register2","other","detail"].indexOf(start) >= 0) window.goTo(start);
@@ -227,10 +228,13 @@
       } catch (err) { if (!keepAuth) go("auth"); }
       settle();
     } else if (state.route === "boot") {
+      state.holdSplash = true;
       setTimeout(function () {
+        if (!state.holdSplash) return;
+        state.holdSplash = false;
         if (state.route === "boot") go("auth");
         settle();
-      }, 900);
+      }, 700);
     } else {
       settle();
     }
@@ -239,14 +243,19 @@
   function applyNativeSession(payload) {
     if (payload.accessToken) API.setTokens(payload.accessToken, payload.refreshToken, payload.meID);
     state.signedIn = !!payload.signedIn;
+    state.holdSplash = false;
     if (state.route === "boot") {
       var start = (Bridge.env().startRoute || "");
       var keepAuth = ["auth", "signin", "register", "register2"].indexOf(start) >= 0;
       if (payload.signedIn && !keepAuth) {
         stack = [];
-        go("main");
-        if (window.__settle) window.__settle();
-        reload().catch(function () {});
+        reload().then(function () {
+          go("main");
+          if (window.__settle) window.__settle();
+        }).catch(function () {
+          go("auth");
+          if (window.__settle) window.__settle();
+        });
       } else {
         go(keepAuth ? start : "auth");
         if (window.__settle) window.__settle();
@@ -531,7 +540,7 @@
     var hadSheet = !!root.querySelector(":scope > .sheet-layer");
     var keptScroll = 0;
     if (previous && kind === "replace") {
-      var oldScroll = previous.querySelector(".scroll");
+      var oldScroll = previous.querySelector('.tab-pane[data-pane="' + state.tab + '"] .scroll') || previous.querySelector(".scroll");
       if (oldScroll) keptScroll = oldScroll.scrollTop;
     }
     var next = pageView();
@@ -573,7 +582,7 @@
       setTimeout(function () { finish(); }, 460);
     }
     if (keptScroll) {
-      var scroller = next.querySelector(".scroll");
+      var scroller = next.querySelector('.tab-pane[data-pane="' + state.tab + '"] .scroll') || next.querySelector(".scroll");
       if (scroller) scroller.scrollTop = keptScroll;
     }
     var shopFrame = next.querySelector(".shop-frame");
@@ -720,9 +729,15 @@
   }
 
   function mainView() {
-    var body = state.tab === "home" ? homeList() : state.tab === "post" ? postList() : chatList();
+    var idx = { home: 0, post: 1, chat: 2 }[state.tab] || 0;
+    var shift = (-idx * 100 / 3) + "%";
     return el(
-      '<div class="screen">' + body +
+      '<div class="screen main-shell">' +
+        '<div class="tab-stage"><div class="tab-track" style="transform:translate3d(' + shift + ',0,0)">' +
+          '<div class="tab-pane" data-pane="home">' + homeList() + "</div>" +
+          '<div class="tab-pane" data-pane="post">' + postList() + "</div>" +
+          '<div class="tab-pane" data-pane="chat">' + chatList() + "</div>" +
+        "</div></div>" +
         '<div class="tabs">' +
           tabBtn("home", "home", "TabHome.png", "TabHomeOff.png") +
           tabBtn("post", "post", "TabPostOn.png", "TabPost.png") +
@@ -733,8 +748,22 @@
   }
   function tabBtn(id, label, on, off) {
     var selected = state.tab === id;
-    return '<button class="tab' + (selected ? " on" : "") + '" data-act="tab" data-id="' + id + '">' +
+    return '<button class="tab' + (selected ? " on" : "") + '" data-act="tab" data-id="' + id + '" data-on="' + on + '" data-off="' + off + '">' +
       '<span class="icon"><img src="img/' + (selected ? on : off) + '" alt="" /></span>' + label + "</button>";
+  }
+  function slideTabs(animate) {
+    var track = document.querySelector(".tab-track");
+    if (!track) return false;
+    var idx = { home: 0, post: 1, chat: 2 }[state.tab] || 0;
+    track.style.transition = animate ? "transform .34s cubic-bezier(0.32, 0.72, 0, 1)" : "none";
+    track.style.transform = "translate3d(" + (-idx * 100 / 3) + "%,0,0)";
+    document.querySelectorAll(".tabs .tab").forEach(function (btn) {
+      var on = btn.getAttribute("data-id") === state.tab;
+      btn.classList.toggle("on", on);
+      var img = btn.querySelector("img");
+      if (img) img.src = "img/" + btn.getAttribute(on ? "data-on" : "data-off");
+    });
+    return true;
   }
 
   function homeList() {
@@ -1036,18 +1065,36 @@
     return clips[n % clips.length];
   }
 
-  function audienceIds() {
-    var seen = {};
-    var ids = [];
-    function add(id) {
-      id = String(id || "").toLowerCase();
-      if (!id || seen[id]) return;
-      seen[id] = 1;
-      ids.push(id);
+  function isAI(id) {
+    id = String(id || "").toLowerCase();
+    return AI_ROLES.some(function (role) { return role.id === id; });
+  }
+
+  function roomCrowd(roomId) {
+    var pool = Object.keys(state.profiles).filter(function (id) {
+      var person = state.profiles[id];
+      return person && person.name && !isAI(id);
+    });
+    var seed = 2166136261;
+    String(roomId || "room").split("").forEach(function (ch) {
+      seed ^= ch.charCodeAt(0);
+      seed = Math.imul(seed, 16777619);
+    });
+    function rnd() {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 4294967296;
     }
-    (state.audience || []).forEach(function (row) { add(row.user_id); });
-    (state.roomLines || []).forEach(function (line) { add(line.sender_id); });
-    return ids;
+    var order = pool.slice();
+    for (var i = order.length - 1; i > 0; i--) {
+      var j = Math.floor(rnd() * (i + 1));
+      var swap = order[i];
+      order[i] = order[j];
+      order[j] = swap;
+    }
+    var take = order.length ? Math.min(order.length, 3 + Math.floor(rnd() * 5)) : 0;
+    var ids = order.slice(0, take);
+    var total = ids.length ? Math.max(ids.length, 8 + Math.floor(rnd() * 56)) : 1 + Math.floor(rnd() * 20);
+    return { ids: ids, total: total };
   }
 
   function myId() {
@@ -1072,9 +1119,28 @@
     };
   }
 
+  function giftParts(line) {
+    var body = line.body || "";
+    var gift = line.gift || "";
+    var cut = body.indexOf("|");
+    if (cut > 0) {
+      if (!gift) gift = body.slice(cut + 1);
+      body = body.slice(0, cut);
+    }
+    if (!/^Gift\d\d$/.test(gift)) gift = "";
+    return { body: body, gift: gift };
+  }
+
   function liveLineHTML(line) {
+    var parts = giftParts(line);
+    var icon = parts.gift ? '<img class="gift-ico" src="img/' + esc(parts.gift) + '.png" alt="" />' : "";
     return '<div class="live-line" data-hold="live" data-local="' + esc(line.id || "") + '"><span class="who">' +
-      esc(personName(line.sender_id)) + "</span> " + esc(line.body) + "</div>";
+      esc(personName(line.sender_id)) + "</span> " + esc(parts.body) + icon + "</div>";
+  }
+
+  function giftFxHTML() {
+    return '<div class="gift-fx"><img src="img/' + esc(state.gift) + '.png" alt="" /><span class="word">Send</span><span class="who">' +
+      esc((state.me && state.me.name) || "") + "</span></div>";
   }
 
   function chatLineHTML(row, prev, fresh) {
@@ -1137,9 +1203,11 @@
       ? '<div class="stage-stack" data-clip="' + esc(clip) + '">' +
           '<video class="stage" src="' + esc(clip) + '" playsinline webkit-playsinline muted preload="auto"></video>' +
           '<video class="stage" src="' + esc(clip) + '" playsinline webkit-playsinline muted preload="auto"></video>' +
+          '<div class="stage-wait"><i></i></div>' +
         "</div>"
       : '<img class="stage" src="' + esc(photo) + '" alt="" />';
-    var ids = audienceIds();
+    var crowd = roomCrowd(state.live || room.id);
+    var ids = crowd.ids;
     var faces = ids.slice(0, 3).map(function (id) {
       var person = state.profiles[id] || {};
       return person.avatar_url || "img/SampleAvatar.png";
@@ -1153,7 +1221,7 @@
         stage +
         '<div class="live-badge"><img src="img/LiveGlyph.svg" alt="" />Live</div>' +
         '<button class="viewers" data-act="audience">' + faces.map(function (src) { return '<img src="' + src + '" alt="" />'; }).join("") +
-          '<span class="count">' + (ids.length || 1) + '</span></button>' +
+          '<span class="count">' + crowd.total + '</span></button>' +
         (user.name ? '<div class="host">' +
           '<img class="av" src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" />' +
           '<div class="meta"><div class="nm">' + esc(user.name) + '</div><div class="hd">' + esc(user.handle || "") + "</div></div>" +
@@ -1167,7 +1235,7 @@
           '<button class="sq" type="button" data-act="about-person" data-id="' + room.owner_id + '"><img src="img/MoreCircle.svg" alt="" /></button>' +
           '<button class="sq" type="button" data-act="back"><img src="img/LiveShare.svg" alt="" /></button>' +
         "</form>" +
-        (state.gift ? '<div class="gift-fx"><img src="img/' + esc(state.gift) + '.png" alt="" /><span class="word">Send</span><span class="who">' + esc((state.me && state.me.name) || "") + "</span></div>" : "") +
+        (state.gift ? giftFxHTML() : "") +
       "</div>"
     );
   }
@@ -1604,12 +1672,8 @@
   }
 
   function audienceRows() {
-    var ids = audienceIds();
-    var bots = AI_ROLES.map(function (role) {
-      return '<button class="people-row" data-act="open-chat" data-id="' + role.id + '"><img src="' + esc(role.avatar) + '" alt="" />' +
-        '<span class="meta"><b>' + esc(role.name) + "</b><span>" + esc(role.handle) + "</span></span></button>";
-    }).join("");
-    var rows = bots + ids.map(function (id) {
+    var ids = roomCrowd(state.live).ids.filter(function (id) { return !isAI(id); });
+    var rows = ids.map(function (id) {
       var user = state.profiles[id] || {};
       var followed = following(id);
       return '<div class="people-row"><img src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" />' +
@@ -1694,13 +1758,11 @@
       }
       else if (act === "tab") {
         if (state.tab === id && state.route === "main") return;
-        var order = { home: 0, post: 1, chat: 2 };
-        var fromTab = order[state.tab] || 0;
-        var toTab = order[id] || 0;
         var wasMain = state.route === "main";
         state.tab = id;
         state.route = "main";
-        motion = wasMain ? (toTab >= fromTab ? "tab-next" : "tab-prev") : "fade";
+        if (wasMain && slideTabs(true)) return;
+        motion = "fade";
         draw();
       }
       else if (act === "post-filter") { state.postFilter = id; draw(); }
@@ -1832,10 +1894,25 @@
           return;
         }
         if (state.me) state.me.gems = gems - cost;
+        var giftBody = "sent a gift|" + id;
+        var line = localLine(giftBody);
+        line.gift = id;
         state.sheet = null;
-        state.roomLines = (state.roomLines || []).concat([localLine("sent a gift")]);
+        state.roomLines = (state.roomLines || []).concat([line]);
         state.gift = id;
-        draw();
+        var roomNode = document.querySelector(".live-room");
+        if (roomNode) {
+          var layer = document.querySelector("#app > .sheet-layer");
+          if (layer) layer.remove();
+          var box = roomNode.querySelector(".live-chat");
+          if (box) {
+            box.insertAdjacentHTML("beforeend", liveLineHTML(line));
+            box.scrollTop = box.scrollHeight;
+          }
+          var oldFx = roomNode.querySelector(".gift-fx");
+          if (oldFx) oldFx.remove();
+          roomNode.insertAdjacentHTML("beforeend", giftFxHTML());
+        } else draw();
         dismissGift();
         var roomId = state.live;
         var giftId = id;
@@ -1843,7 +1920,7 @@
           return API.sendGift(roomId, cost, giftId);
         }).then(function (left) {
           if (state.me && typeof left === "number") state.me.gems = left;
-          return API.sendRoomMessage(roomId, "sent a gift");
+          return API.sendRoomMessage(roomId, giftBody);
         }).then(function () {
           return API.roomMessages(roomId);
         }).then(function (rows) {
@@ -2202,6 +2279,9 @@
       try { next.currentTime = 0; } catch (err) {}
     }).catch(function () {});
     play(lead);
+    function markPlaying() { stack.classList.add("ready"); }
+    lead.addEventListener("playing", markPlaying);
+    if (!lead.paused && lead.currentTime > 0) markPlaying();
     var handoff = false;
     function pump() {
       if (!stack.isConnected) return;
@@ -2237,7 +2317,8 @@
     }, 1400);
     setTimeout(function () {
       state.gift = "";
-      if (state.route === "live") draw();
+      var fx = document.querySelector(".gift-fx");
+      if (fx) fx.remove();
     }, 1680);
   }
 

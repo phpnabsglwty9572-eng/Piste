@@ -25,6 +25,7 @@ struct HybridHostView: UIViewControllerRepresentable {
 }
 
 final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, PHPickerViewControllerDelegate, UIGestureRecognizerDelegate {
+    static let splashFill = UIColor(red: 0.847, green: 0.941, blue: 0.988, alpha: 1)
     weak var session: YoohooSession?
     weak var nav: AppNavigator?
     private var rnView: WKWebView!
@@ -37,7 +38,7 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor(red: 130 / 255, green: 196 / 255, blue: 249 / 255, alpha: 1)
+        view.backgroundColor = Self.splashFill
         rnView = makeWebView(name: "rn")
         view.addSubview(rnView)
         rnView.translatesAutoresizingMaskIntoConstraints = false
@@ -54,7 +55,7 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardFrame(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardFrame(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
         Task { await boot() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             Task { @MainActor in
                 self?.session?.h5Ready = true
             }
@@ -92,8 +93,9 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         web.scrollView.bounces = false
         web.scrollView.keyboardDismissMode = .interactive
         web.scrollView.contentInsetAdjustmentBehavior = .never
-        web.isOpaque = false
-        web.backgroundColor = .clear
+        web.isOpaque = true
+        web.backgroundColor = Self.splashFill
+        web.scrollView.backgroundColor = Self.splashFill
         web.accessibilityIdentifier = name
         if #available(iOS 16.4, *) {
             web.isInspectable = true
