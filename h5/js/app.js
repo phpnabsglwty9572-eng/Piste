@@ -845,6 +845,7 @@
     var user = state.profiles[room.owner_id] || {};
     var photo = room.cover_url || "img/LiveStage.png";
     var followed = following(room.owner_id);
+    var mineRoom = String(room.owner_id || "").toLowerCase() === myId();
     var loved = roomLiked(room.id);
     var split = splitTags(room.title || "");
     return '<article class="live-card">' +
@@ -856,7 +857,7 @@
           '<div class="author">' +
             '<img class="av" src="' + esc(user.avatar_url || "img/AIUserFace.png") + '" alt="" data-act="profile" data-id="' + room.owner_id + '" />' +
             '<div class="meta"><div class="nm">' + esc(user.name || "") + '</div><div class="hd">' + esc(user.handle || "") + "</div></div>" +
-            (followed ? "" : '<button class="plus" data-act="follow" data-id="' + room.owner_id + '"><img src="img/BadgePlus.png" alt="" /></button>') +
+            (mineRoom || followed ? "" : '<button class="plus" data-act="follow" data-id="' + room.owner_id + '"><img src="img/BadgePlus.png" alt="" /></button>') +
           "</div>" +
           '<button class="icon34" data-act="like-room" data-id="' + room.id + '"><img src="img/' + (loved ? "LikeOnGlyph.svg" : "LikeGlyph.svg") + '" alt="" /></button>' +
           '<button class="icon34" data-act="about-person" data-id="' + room.owner_id + '"><img src="img/MoreGlyph.svg" alt="" /></button>' +
@@ -988,6 +989,7 @@
     var photos = post.media_urls || (post.media_url ? [post.media_url] : []);
     var photo = photos[0] || "img/LiveStage.png";
     var followed = following(post.author_id);
+    var minePost = String(post.author_id || "").toLowerCase() === myId();
     var split = splitTags(post.body || "");
     var liked = state.likes.indexOf(String(post.id).toLowerCase()) >= 0;
     var onDetail = state.route === "post";
@@ -1009,7 +1011,7 @@
           '<div class="author">' +
             '<img class="av" src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + post.author_id + '" />' +
             '<div class="meta"><div class="nm">' + esc(user.name || "") + '</div><div class="hd">' + esc(user.handle || "") + "</div></div>" +
-            (followed ? "" : '<button class="plus" data-act="follow" data-id="' + post.author_id + '"><img src="img/BadgePlus.png" alt="" /></button>') +
+            (minePost || followed ? "" : '<button class="plus" data-act="follow" data-id="' + post.author_id + '"><img src="img/BadgePlus.png" alt="" /></button>') +
           "</div>" +
           actions +
         "</div></div>" +
@@ -1769,13 +1771,15 @@
     return n ? n - 1 : 0;
   }
 
-  var chatDrag = { row: null, x: 0, y: 0, moved: false };
+  var chatDrag = { row: null, x: 0, y: 0, dx: 0, moved: false, axis: "" };
   function bindChatSwipe() {
     var root = document.getElementById("app");
     root.addEventListener("touchstart", function (event) {
       var row = event.target.closest(".chat-swipe");
       chatDrag.row = row;
       chatDrag.moved = false;
+      chatDrag.axis = "";
+      chatDrag.dx = 0;
       if (!row || !event.touches[0]) return;
       chatDrag.x = event.touches[0].clientX;
       chatDrag.y = event.touches[0].clientY;
@@ -1784,7 +1788,12 @@
       if (!chatDrag.row || !event.touches[0]) return;
       var dx = event.touches[0].clientX - chatDrag.x;
       var dy = event.touches[0].clientY - chatDrag.y;
-      if (Math.abs(dx) < 10 || Math.abs(dy) > Math.abs(dx)) return;
+      chatDrag.dx = dx;
+      if (!chatDrag.axis) {
+        if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+        chatDrag.axis = Math.abs(dx) > Math.abs(dy) && dx < 0 ? "x" : "y";
+      }
+      if (chatDrag.axis !== "x") return;
       chatDrag.moved = true;
       chatDrag.row.classList.add("dragging");
       var base = chatDrag.row.classList.contains("open") ? -64 : 0;
@@ -1794,20 +1803,17 @@
     }, { passive: true });
     root.addEventListener("touchend", function () {
       var row = chatDrag.row;
+      var axis = chatDrag.axis;
+      var dx = chatDrag.dx;
       chatDrag.row = null;
       if (!row) return;
       var face = row.querySelector(".chat-row");
-      var x = 0;
-      if (face && face.style.transform) {
-        var match = /translateX\((-?\d+)/.exec(face.style.transform);
-        x = match ? Number(match[1]) : 0;
-      }
       row.classList.remove("dragging");
       if (face) face.style.transform = "";
       document.querySelectorAll(".chat-swipe.open").forEach(function (other) {
         if (other !== row) other.classList.remove("open");
       });
-      if (x < -32) row.classList.add("open");
+      if (axis === "x" && dx <= -48) row.classList.add("open");
       else row.classList.remove("open");
     });
   }
@@ -2115,8 +2121,8 @@
         catch (err) { if (!alreadyThere(err)) throw err; }
         state.sheet = null;
         var leave = state.route !== "main";
+        Bridge.toast("Added to Blacklist.");
         await reload();
-        Bridge.toast("Blocked.");
         if (leave) back();
       }
       else if (act === "unblock") { await API.unblock(id); await reload(); Bridge.toast("Removed."); }
@@ -2196,6 +2202,7 @@
     var data = new FormData(form);
     var body = String(data.get("body") || "").trim();
     if (busy) return;
+    var notice = "";
     try {
       if (kind === "register") {
         state.form.email = String(data.get("email") || "").trim();
@@ -2284,15 +2291,23 @@
         draw();
       }
       else if (kind === "report") {
-        try { await API.report(state.reportTarget, String(data.get("reason") || body)); }
-        catch (err) { if (!alreadyThere(err)) throw err; }
-        state.sheet = null; Bridge.toast("Reported."); draw();
+        var reason = String(data.get("reason") || body).trim();
+        if (!reason) notice = "Please enter...";
+        else {
+          try { await API.report(state.reportTarget, reason); }
+          catch (err) { if (!alreadyThere(err)) throw err; }
+          state.sheet = null;
+          notice = "Reported.";
+          draw();
+        }
       }
     } catch (err) {
+      notice = "";
       Bridge.toast(err.message || String(err));
     } finally {
       busy = false;
       await Bridge.wait(false);
+      if (notice) Bridge.toast(notice);
     }
   }
 

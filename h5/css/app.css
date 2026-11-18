@@ -564,7 +564,10 @@ img.avatar-wait { background: none; animation: none; }
   position: absolute; right: 0; top: 0; bottom: 0; width: 64px;
   border: 0; border-radius: 12px; background: #ff3b30; padding: 0;
   display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
 }
+.chat-swipe.dragging .chat-del,
+.chat-swipe.open .chat-del { opacity: 1; pointer-events: auto; }
 .chat-del img { width: 23px; height: 23px; }
 .chat-row {
   position: relative; z-index: 1;
@@ -859,7 +862,8 @@ img.avatar-wait { background: none; animation: none; }
   z-index: 2;
 }
 .prof-head .form-sled { top: auto; bottom: 0; left: auto; right: 16px; z-index: 3; }
-.prof-av { position: absolute; left: 50%; top: 244px; width: 80px; height: 80px; margin-left: -40px; z-index: 4; }
+.prof-head.wait-host:not(.ready)::after { z-index: 1; }
+.prof-av { position: absolute; left: 50%; top: 244px; width: 80px; height: 80px; margin-left: -40px; z-index: 5; }
 .prof-av .face { position: absolute; left: 5px; top: 5px; width: 70px; height: 70px; border-radius: 35px; object-fit: cover; }
 .prof-av .frame { position: absolute; left: 0; top: 0; width: 80px; height: 80px; }
 .prof-av .edit { position: absolute; left: 56px; top: 56px; width: 24px; height: 24px; border: 0; padding: 0; background: none; }
