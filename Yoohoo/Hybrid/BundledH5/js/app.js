@@ -147,6 +147,7 @@
     Bridge.onNative(function (body) {
       if (body.type === "session") applyNativeSession(body.payload || {});
       if (body.type === "back") back();
+      if (body.type === "edge") onEdge(body.payload || {});
       if (body.type === "keyboard") {
         state.kb = Number((body.payload && body.payload.height) || 0);
         document.documentElement.style.setProperty("--kb", state.kb + "px");
@@ -156,6 +157,7 @@
     if (env.accessToken) API.setTokens(env.accessToken, env.refreshToken, "");
     document.getElementById("app").addEventListener("click", onClick);
     bindChatSwipe();
+    bindPullRefresh();
     document.getElementById("app").addEventListener("submit", onSubmit);
     document.getElementById("app").addEventListener("contextmenu", onHold);
     document.getElementById("app").addEventListener("input", onFormInput);
@@ -446,6 +448,106 @@
     draw();
   }
 
+  var edgeDrag = null;
+  function canEdgeBack() {
+    if (state.preview || state.sheet) return false;
+    if (state.route === "main" || state.route === "auth" || state.route === "boot") return false;
+    return true;
+  }
+  function edgeBackup() {
+    var saved = snap();
+    saved.sheet = state.sheet;
+    saved.preview = state.preview;
+    saved.aiFaq = state.aiFaq;
+    return saved;
+  }
+  function edgeRestore(saved) {
+    Object.keys(saved).forEach(function (key) { state[key] = saved[key]; });
+  }
+  function beginEdge() {
+    if (edgeDrag || !canEdgeBack()) return false;
+    var root = document.getElementById("app");
+    var current = root.querySelector(":scope > .page");
+    if (!current) return false;
+    var saved = edgeBackup();
+    var prev = stack.length ? stack[stack.length - 1] : null;
+    if (prev) edgeRestore(prev);
+    else state.route = API.me() ? "main" : "auth";
+    state.sheet = null;
+    state.preview = null;
+    var under = pageView();
+    edgeRestore(saved);
+    under.classList.add("page", "edge-under");
+    current.classList.add("edge-top");
+    under.style.transform = "translate3d(-28%,0,0)";
+    root.insertBefore(under, current);
+    edgeDrag = { under: under, top: current };
+    return true;
+  }
+  function moveEdge(progress) {
+    if (!edgeDrag && !beginEdge()) return;
+    var amount = Math.max(0, Math.min(1, Number(progress) || 0));
+    edgeDrag.top.style.transition = "none";
+    edgeDrag.under.style.transition = "none";
+    edgeDrag.top.style.transform = "translate3d(" + (amount * 100) + "%,0,0)";
+    edgeDrag.under.style.transform = "translate3d(" + (-28 * (1 - amount)) + "%,0,0)";
+  }
+  function endEdge(commit) {
+    if (!edgeDrag) return;
+    var drag = edgeDrag;
+    var top = drag.top;
+    var under = drag.under;
+    top.style.transition = "transform .32s cubic-bezier(0.32, 0.72, 0, 1)";
+    under.style.transition = "transform .32s cubic-bezier(0.32, 0.72, 0, 1)";
+    top.style.transform = commit ? "translate3d(100%,0,0)" : "translate3d(0,0,0)";
+    under.style.transform = commit ? "translate3d(0,0,0)" : "translate3d(-28%,0,0)";
+    var done = false;
+    function finish() {
+      if (done) return;
+      done = true;
+      edgeDrag = null;
+      if (commit) {
+        if (state.route === "call") { Bridge.ring(false); stopCamera(); }
+        if (stack.length) {
+          var prev = stack.pop();
+          Object.keys(prev).forEach(function (key) { state[key] = prev[key]; });
+        } else if (state.route !== "main" && state.route !== "auth") {
+          state.route = API.me() ? "main" : "auth";
+        }
+        state.sheet = null;
+        state.preview = null;
+        motion = "replace";
+        draw();
+        return;
+      }
+      if (under.parentNode) under.remove();
+      top.style.transition = "";
+      top.style.transform = "";
+      top.classList.remove("edge-top");
+    }
+    top.addEventListener("transitionend", finish);
+    setTimeout(finish, 380);
+  }
+  function onEdge(payload) {
+    var phase = payload.phase || "";
+    var progress = Number(payload.progress || 0);
+    if (state.route === "ai" && state.aiFaq && aiLines(state.aiId).length) {
+      if (phase === "end" && progress > 0.25) {
+        state.aiFaq = false;
+        motion = "replace";
+        draw();
+      }
+      return;
+    }
+    if (state.sheet || state.preview) {
+      if (phase === "end") back();
+      return;
+    }
+    if (phase === "move") moveEdge(progress);
+    else if (phase === "end") endEdge(true);
+    else endEdge(false);
+  }
+
   function back() {
     var active = document.activeElement;
     if (active && active.blur) active.blur();
@@ -530,6 +632,7 @@
   }
 
   function draw() {
+    if (edgeDrag) return;
     var root = document.getElementById("app");
     var kind = motion || "replace";
     motion = "replace";
@@ -1772,6 +1875,64 @@
   }
 
   var chatDrag = { row: null, x: 0, y: 0, dx: 0, moved: false, axis: "" };
+  var pullRefresh = { scroller: null, y: 0, dy: 0, arm: false, loading: false };
+  function bindPullRefresh() {
+    var root = document.getElementById("app");
+    root.addEventListener("touchstart", function (event) {
+      if (pullRefresh.loading || state.route !== "main" || !event.touches[0]) return;
+      var scroller = event.target.closest(".tab-pane .scroll");
+      if (!scroller) {
+        var head = event.target.closest(".feed-head");
+        if (head && head.parentElement) scroller = head.parentElement.querySelector(":scope > .scroll");
+      }
+      if (!scroller || scroller.scrollTop > 1) return;
+      pullRefresh.scroller = scroller;
+      pullRefresh.y = event.touches[0].clientY;
+      pullRefresh.dy = 0;
+      pullRefresh.arm = false;
+    }, { passive: true });
+    root.addEventListener("touchmove", function (event) {
+      if (!pullRefresh.scroller || !event.touches[0]) return;
+      if (pullRefresh.scroller.scrollTop > 1 && pullRefresh.dy <= 0) {
+        pullRefresh.scroller = null;
+        return;
+      }
+      var dy = event.touches[0].clientY - pullRefresh.y;
+      if (dy <= 0) return;
+      pullRefresh.dy = dy;
+      pullRefresh.arm = dy > 72;
+      var mark = pullRefresh.scroller.querySelector(":scope > .pull-refresh");
+      if (!mark) {
+        mark = document.createElement("div");
+        mark.className = "pull-refresh";
+        mark.innerHTML = "<i></i>";
+        pullRefresh.scroller.insertBefore(mark, pullRefresh.scroller.firstChild);
+      }
+      mark.style.height = Math.min(64, dy * 0.45) + "px";
+      mark.classList.toggle("ready", pullRefresh.arm);
+    }, { passive: true });
+    root.addEventListener("touchend", function () {
+      var scroller = pullRefresh.scroller;
+      var arm = pullRefresh.arm;
+      pullRefresh.scroller = null;
+      pullRefresh.arm = false;
+      if (!scroller) return;
+      var mark = scroller.querySelector(":scope > .pull-refresh");
+      if (!arm) {
+        if (mark) mark.remove();
+        return;
+      }
+      if (mark) {
+        mark.style.height = "64px";
+        mark.classList.add("spin");
+      }
+      pullRefresh.loading = true;
+      reload().catch(function () {}).then(function () {
+        pullRefresh.loading = false;
+      });
+    });
+  }
+
   function bindChatSwipe() {
     var root = document.getElementById("app");
     root.addEventListener("touchstart", function (event) {
@@ -1851,7 +2012,11 @@
         go(to, to === "profile" ? { profile: API.me() } : null);
       }
       else if (act === "tab") {
-        if (state.tab === id && state.route === "main") return;
+        if (state.tab === id && state.route === "main") {
+          var scroller = document.querySelector('.tab-pane[data-pane="' + id + '"] .scroll');
+          if (scroller) scroller.scrollTo({ top: 0, behavior: "smooth" });
+          return;
+        }
         var wasMain = state.route === "main";
         state.tab = id;
         state.route = "main";

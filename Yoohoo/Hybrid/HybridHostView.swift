@@ -500,11 +500,20 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
     }
 
     @objc private func onEdge(_ gesture: UIScreenEdgePanGestureRecognizer) {
-        guard gesture.state == .ended else { return }
-        let translation = gesture.translation(in: view).x
-        let velocity = gesture.velocity(in: view).x
-        if translation > 48 || velocity > 480 {
-            emit("back", [:])
+        let width = max(view.bounds.width, 1)
+        let translation = max(0, gesture.translation(in: view).x)
+        let progress = min(1, translation / width)
+        switch gesture.state {
+        case .began, .changed:
+            emit("edge", ["phase": "move", "progress": progress])
+        case .ended:
+            let velocity = gesture.velocity(in: view).x
+            let finish = progress > 0.33 || velocity > 700
+            emit("edge", ["phase": finish ? "end" : "cancel", "progress": progress])
+        case .cancelled, .failed:
+            emit("edge", ["phase": "cancel", "progress": progress])
+        default:
+            break
         }
     }
 

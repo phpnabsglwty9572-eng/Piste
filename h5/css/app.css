@@ -16,6 +16,21 @@
 html, body, #app { margin: 0; height: 100%; background: #d7efff; color: var(--ink); font-family: "PingFang SC", "Space Grotesk", sans-serif; }
 #app { position: relative; overflow: hidden; }
 .page { height: 100%; }
+.page.edge-top, .page.edge-under { position: absolute; inset: 0; width: 100%; height: 100%; }
+.page.edge-top { z-index: 2; box-shadow: -10px 0 28px rgba(0,0,0,.16); }
+.page.edge-under { z-index: 1; }
+.pull-refresh {
+  height: 0; overflow: hidden; flex: none;
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.pull-refresh i {
+  width: 18px; height: 18px; margin-bottom: 8px; box-sizing: border-box;
+  border-radius: 50%; border: 2px solid rgba(42,117,238,.25); border-top-color: transparent;
+}
+.pull-refresh.ready i, .pull-refresh.spin i {
+  border-top-color: #2a75ee;
+  animation: stage-spin .7s linear infinite;
+}
 .motion { position: absolute; inset: 0; width: 100%; height: 100%; }
 .motion.push { z-index: 2; animation: ios-push .38s cubic-bezier(0.32, 0.72, 0, 1) both; }
 .motion.under { z-index: 1; animation: ios-under .38s cubic-bezier(0.32, 0.72, 0, 1) both; pointer-events: none; }
