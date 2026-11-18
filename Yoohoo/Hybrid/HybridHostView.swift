@@ -524,8 +524,11 @@ final class CallRinger {
 
     func start() {
         stop()
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        try? session.setActive(true)
         beep()
-        timer = Timer.scheduledTimer(withTimeInterval: 1.35, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 2.6, repeats: true) { [weak self] _ in
             self?.beep()
         }
     }
@@ -540,13 +543,13 @@ final class CallRinger {
     private func beep() {
         guard let data = Self.tone() else { return }
         player = try? AVAudioPlayer(data: data)
-        player?.volume = 0.45
+        player?.volume = 1
         player?.play()
     }
 
     private static func tone() -> Data? {
-        let sampleRate = 8000
-        let duration = 0.42
+        let sampleRate = 22050
+        let duration = 1.05
         let count = Int(Double(sampleRate) * duration)
         var data = Data()
         var header = Data()
@@ -555,20 +558,25 @@ final class CallRinger {
             header.append(Data(bytes: &v, count: 4))
         }
         header.append(contentsOf: Array("RIFF".utf8))
-        append(UInt32(36 + count))
+        append(UInt32(36 + count * 2))
         header.append(contentsOf: Array("WAVEfmt ".utf8))
         append(16)
         header.append(contentsOf: [1, 0, 1, 0])
         append(UInt32(sampleRate))
-        append(UInt32(sampleRate))
-        header.append(contentsOf: [1, 0, 8, 0])
+        append(UInt32(sampleRate * 2))
+        header.append(contentsOf: [2, 0, 16, 0])
         header.append(contentsOf: Array("data".utf8))
-        append(UInt32(count))
+        append(UInt32(count * 2))
         data.append(header)
         for i in 0..<count {
-            let sample = sin(2.0 * Double.pi * 480.0 * Double(i) / Double(sampleRate))
-            let fade = min(1.0, min(Double(i) / 200.0, Double(count - i) / 200.0))
-            data.append(UInt8(clamping: Int((sample * fade * 0.35 + 0.5) * 255)))
+            let t = Double(i) / Double(sampleRate)
+            let on = t < 0.42 || (t >= 0.62 && t < 1.04)
+            let local = t < 0.42 ? t : t - 0.62
+            let remain = t < 0.42 ? 0.42 - t : 1.04 - t
+            let env = on ? min(1.0, min(local / 0.02, remain / 0.03)) : 0
+            let sample = (sin(2.0 * Double.pi * 440.0 * t) + sin(2.0 * Double.pi * 480.0 * t)) * 0.45 * env
+            var pcm = Int16(max(-1.0, min(1.0, sample)) * 32000).littleEndian
+            data.append(Data(bytes: &pcm, count: 2))
         }
         return data
     }

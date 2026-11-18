@@ -26,7 +26,10 @@
     roomSig: "",
     audience: [],
     liveTime: 0,
+    pending: [],
     ai: [],
+    aiBy: {},
+    aiId: "ai:pegu",
     form: { email: "", password: "", name: "" },
     composeKind: "image",
     giftPick: "Gift01",
@@ -40,6 +43,53 @@
     preview: null,
     ready: false
   };
+
+  var AI_ROLES = [
+    {
+      id: "ai:pegu",
+      name: "Pegu",
+      handle: "@pegu",
+      avatar: "img/Penguin.png",
+      preview: "Did you go skiing this weekend?",
+      title: "Glide into winter with Pegu",
+      blurb: "Fresh snow, cool goggles and endless fun. Let this tiny skier bring warmth and joy to your snowy days.",
+      prompts: [
+        "Did you go skiing this weekend?",
+        "Do you usually go skiing alone, or hang out with a group of ski buddies?",
+        "Have you ever tried night skiing? I heard the lights on the slope look beautiful."
+      ],
+      reply: "No. You can rent large items such as skis, ski boots and ski poles at the resort. Only buy personal and safety items like a helmet, goggles and base layers."
+    },
+    {
+      id: "ai:yoohoo",
+      name: "Yoohoo",
+      handle: "@yoohoo",
+      avatar: "img/AuthLogo.png",
+      preview: "Yoohoo!",
+      title: "Yoohoo!",
+      blurb: "",
+      prompts: ["Yoohoo!"],
+      reply: "Yoohoo!"
+    }
+  ];
+
+  function aiRole(id) {
+    return AI_ROLES.filter(function (role) { return role.id === id; })[0] || null;
+  }
+
+  function aiKey() {
+    return "yoohoo.ai." + (API.me() || "local");
+  }
+
+  function persistAI() {
+    try { localStorage.setItem(aiKey(), JSON.stringify(state.aiBy || {})); } catch (err) {}
+  }
+
+  function aiLines(id) {
+    if (!state.aiBy) state.aiBy = {};
+    if (!state.aiBy[id]) state.aiBy[id] = [];
+    return state.aiBy[id];
+  }
   var stack = [];
   var busy = false;
   var poller = 0;
@@ -275,9 +325,18 @@
     state.people = [];
     state.lines = {};
     if (me) {
+      var saved = {};
+      try { saved = JSON.parse(localStorage.getItem("yoohoo.ai." + me) || "{}"); } catch (err) { saved = {}; }
+      var server = [];
       try {
-        state.ai = (await API.aiLines() || []).map(function (row) { return { mine: row.mine, body: row.body }; });
-      } catch (err) { state.ai = state.ai || []; }
+        server = (await API.aiLines() || []).map(function (row) { return { mine: row.mine, body: row.body }; });
+      } catch (err) { server = []; }
+      state.aiBy = {
+        "ai:pegu": saved["ai:pegu"] || server,
+        "ai:yoohoo": saved["ai:yoohoo"] || []
+      };
+      persistAI();
+      if (state.aiId) state.ai = aiLines(state.aiId);
     }
     threads.forEach(function (thread) {
       var other = thread.user_low === me ? thread.user_high : thread.user_low;
@@ -294,6 +353,7 @@
         time: stamp(last && last.created_at)
       });
     });
+    applyPending();
   }
 
   window.goTo = function (route) {
@@ -345,7 +405,9 @@
     };
   }
 
+  var motion = "replace";
   function go(route, extra) {
+    var from = state.route;
     var fromAuth = ["auth", "signin", "register", "register2"].indexOf(state.route) >= 0;
     var toAuth = ["auth", "signin", "register", "register2"].indexOf(route) >= 0;
     if (route === "auth" || (route === "main" && fromAuth)) stack = [];
@@ -361,27 +423,59 @@
     state.preview = null;
     if (extra) Object.keys(extra).forEach(function (key) { state[key] = extra[key]; });
     if (route === "call") Bridge.ring(true);
+    if (from === "boot" || from === route) motion = extra && from === route ? "push" : "replace";
+    else if (toAuth || fromAuth) motion = "fade";
+    else motion = "push";
     draw();
   }
 
   function back() {
     var active = document.activeElement;
     if (active && active.blur) active.blur();
-    if (state.preview) { state.preview = null; draw(); return; }
-    if (state.sheet) { state.sheet = null; draw(); return; }
+    if (state.preview) { state.preview = null; motion = "fade"; draw(); return; }
+    if (state.sheet) { closeSheet(); return; }
     if (state.route === "call") { Bridge.ring(false); stopCamera(); }
     if (stack.length) {
       var prev = stack.pop();
       Object.keys(prev).forEach(function (key) { state[key] = prev[key]; });
       state.sheet = null;
       state.preview = null;
+      motion = "pop";
       draw();
       return;
     }
     if (state.route !== "main" && state.route !== "auth") {
       state.route = API.me() ? "main" : "auth";
+      motion = "pop";
       draw();
     }
+  }
+
+  function closeSheet() {
+    var layer = document.querySelector(".sheet-layer");
+    if (!layer || layer.getAttribute("data-closing") === "1") {
+      state.sheet = null;
+      motion = "replace";
+      draw();
+      return;
+    }
+    layer.setAttribute("data-closing", "1");
+    var card = layer.querySelector(".snow-sheet, .gift-shop");
+    var dim = layer.querySelector(".dim");
+    if (card) {
+      card.style.animation = "none";
+      card.style.transition = "transform .28s cubic-bezier(0.32, 0.72, 0, 1)";
+      card.style.transform = "translateY(110%)";
+    }
+    if (dim) {
+      dim.style.transition = "opacity .28s ease";
+      dim.style.opacity = "0";
+    }
+    setTimeout(function () {
+      state.sheet = null;
+      motion = "replace";
+      draw();
+    }, 270);
   }
 
   function needAuth() {
@@ -390,29 +484,82 @@
     return false;
   }
 
+  function pageView() {
+    if (state.route === "boot") return el('<div class="auth"></div>');
+    if (state.route === "auth") return authView();
+    if (state.route === "register" || state.route === "signin") return formView();
+    if (state.route === "register2") return registerPhotosView();
+    if (state.route === "eula") return eulaView();
+    if (state.route === "live") return liveView();
+    if (state.route === "post") return postView();
+    if (state.route === "compose") return composeView();
+    if (state.route === "chat") return chatView();
+    if (state.route === "ai") return aiView();
+    if (state.route === "profile") return profileView();
+    if (state.route === "settings") return settingsView();
+    if (state.route === "shop") return shopView();
+    if (state.route === "edit") return editView();
+    if (state.route === "call") return callView();
+    if (state.route === "people") return peopleView();
+    return mainView();
+  }
+
+  function adoptStage(next) {
+    var fresh = next.querySelector(".stage-stack");
+    var kept = document.querySelector(".stage-stack");
+    if (!fresh || !kept || kept === fresh) return;
+    if (kept.getAttribute("data-clip") !== fresh.getAttribute("data-clip")) return;
+    fresh.replaceWith(kept);
+  }
+
   function draw() {
-    var playing = document.querySelector(".live-room video.stage");
-    if (playing) state.liveTime = playing.currentTime || 0;
     var root = document.getElementById("app");
+    var kind = motion || "replace";
+    motion = "replace";
     document.documentElement.style.setProperty("--kb", (state.kb || 0) + "px");
-    if (state.route === "boot") root.replaceChildren(el('<div class="auth"></div>'));
-    else if (state.route === "auth") root.replaceChildren(authView());
-    else if (state.route === "register" || state.route === "signin") root.replaceChildren(formView());
-    else if (state.route === "register2") root.replaceChildren(registerPhotosView());
-    else if (state.route === "eula") root.replaceChildren(eulaView());
-    else if (state.route === "live") root.replaceChildren(liveView());
-    else if (state.route === "post") root.replaceChildren(postView());
-    else if (state.route === "compose") root.replaceChildren(composeView());
-    else if (state.route === "chat") root.replaceChildren(chatView());
-    else if (state.route === "ai") root.replaceChildren(aiView());
-    else if (state.route === "profile") root.replaceChildren(profileView());
-    else if (state.route === "settings") root.replaceChildren(settingsView());
-    else if (state.route === "shop") root.replaceChildren(shopView());
-    else if (state.route === "edit") root.replaceChildren(editView());
-    else if (state.route === "call") root.replaceChildren(callView());
-    else if (state.route === "people") root.replaceChildren(peopleView());
-    else root.replaceChildren(mainView());
-    if (state.sheet) root.appendChild(sheetView());
+    var previous = root.querySelector(":scope > .page");
+    var hadSheet = !!root.querySelector(":scope > .sheet-layer");
+    var next = pageView();
+    next.classList.add("page");
+    if (!previous || kind === "replace") {
+      if (previous && state.route === "live") {
+        root.appendChild(next);
+        adoptStage(next);
+        previous.remove();
+      } else root.replaceChildren(next);
+    } else {
+      if (kind === "pop") {
+        next.classList.add("motion", "back");
+        previous.classList.add("motion", "pop");
+        root.insertBefore(next, previous);
+      } else if (kind === "fade") {
+        next.classList.add("motion", "fade");
+        root.appendChild(next);
+      } else {
+        next.classList.add("motion", "push");
+        previous.classList.add("motion", "under");
+        root.appendChild(next);
+      }
+      var finished = false;
+      function finish(event) {
+        if (finished) return;
+        if (event && event.target !== next && kind !== "pop") return;
+        if (event && kind === "pop" && event.target !== previous) return;
+        finished = true;
+        if (previous.parentNode) previous.remove();
+        next.classList.remove("motion", "push", "back", "fade");
+      }
+      (kind === "pop" ? previous : next).addEventListener("animationend", finish);
+      setTimeout(function () { finish(); }, 460);
+    }
+    root.querySelectorAll(":scope > .sheet-layer, :scope > .preview").forEach(function (node) { node.remove(); });
+    if (state.sheet) {
+      var layer = sheetView();
+      if (!hadSheet) layer.classList.add("presenting");
+      root.appendChild(layer);
+      bindSheetDrag(layer);
+      if (!hadSheet) setTimeout(function () { layer.classList.remove("presenting"); }, 460);
+    }
     if (state.preview) {
       root.appendChild(el(
         '<div class="preview" data-act="close-preview">' +
@@ -425,6 +572,43 @@
     startPoll();
     if (state.route === "call") startCamera();
     if (state.route === "live") startLive();
+    var thread = document.querySelector(".chat-thread");
+    var liveBox = document.querySelector(".live-chat");
+    if (thread) thread.scrollTop = thread.scrollHeight;
+    if (liveBox) liveBox.scrollTop = liveBox.scrollHeight;
+  }
+
+  function bindSheetDrag(layer) {
+    var card = layer.querySelector(".snow-sheet, .gift-shop");
+    if (!card) return;
+    var startY = 0;
+    var dy = 0;
+    var tracking = false;
+    layer.addEventListener("touchstart", function (event) {
+      if (!event.touches[0] || !card.contains(event.target)) return;
+      startY = event.touches[0].clientY;
+      dy = 0;
+      tracking = true;
+      card.style.transition = "none";
+    }, { passive: true });
+    layer.addEventListener("touchmove", function (event) {
+      if (!tracking || !event.touches[0]) return;
+      dy = Math.max(0, event.touches[0].clientY - startY);
+      card.style.transform = "translateY(" + dy + "px)";
+      var dim = layer.querySelector(".dim");
+      if (dim) dim.style.opacity = String(Math.max(0.2, 1 - dy / 320));
+    }, { passive: true });
+    layer.addEventListener("touchend", function () {
+      if (!tracking) return;
+      tracking = false;
+      if (dy > 88) closeSheet();
+      else {
+        card.style.transition = "transform .32s cubic-bezier(0.32, 0.72, 0, 1)";
+        card.style.transform = "";
+        var dim = layer.querySelector(".dim");
+        if (dim) { dim.style.transition = "opacity .32s ease"; dim.style.opacity = ""; }
+      }
+    });
   }
 
   function authView() {
@@ -716,23 +900,43 @@
       "</article>";
   }
 
+  function listPeople() {
+    var bots = AI_ROLES.map(function (role) {
+      var rows = aiLines(role.id);
+      var last = rows[rows.length - 1];
+      return {
+        id: role.id,
+        name: role.name,
+        avatar: role.avatar,
+        handle: role.handle,
+        preview: last ? last.body : role.preview,
+        time: ""
+      };
+    });
+    return bots.concat(state.people.map(function (person) {
+      person.handle = (state.profiles[person.id] || {}).handle || "";
+      return person;
+    }));
+  }
+
   function chatList() {
     var gems = state.me.gems || state.me.coins || 0;
-    var chips = state.people.map(function (person) {
+    var listed = listPeople();
+    var chips = listed.map(function (person) {
       return '<button class="friend-card" data-act="open-chat" data-id="' + person.id + '">' +
         '<span class="face"><img src="' + esc(person.avatar || "img/SampleAvatar.png") + '" alt="" />' +
         '<img class="tick" src="img/VerifyBadge.png" alt="" /></span>' +
         '<span class="nm">' + esc(person.name) + '</span>' +
-        '<span class="hd">' + esc((state.profiles[person.id] || {}).handle || "") + "</span></button>";
+        '<span class="hd">' + esc(person.handle || "") + "</span></button>";
     }).join("");
-    var rows = state.people.map(function (person) {
+    var rows = listed.map(function (person) {
       return '<div class="chat-swipe">' +
         '<button class="chat-del" type="button" data-act="ask-delete-chat" data-id="' + person.id + '"><img src="img/ChatTrash.svg" alt="" /></button>' +
         '<button class="chat-row" data-act="open-chat" data-id="' + person.id + '">' +
         '<img class="av" src="' + esc(person.avatar || "img/SampleAvatar.png") + '" alt="" />' +
         '<span class="meta"><span class="nm">' + esc(person.name) + '</span>' +
         '<span class="pv">' + esc(person.preview) + "</span></span>" +
-        '<span class="tm">' + esc(person.time) + "</span></button></div>";
+        (person.time ? '<span class="tm">' + esc(person.time) + "</span>" : "") + "</button></div>";
     }).join("");
     return '<div class="feed-page">' +
       '<div class="feed-head short">' +
@@ -772,13 +976,94 @@
     return ids;
   }
 
+  function myId() {
+    return String(API.me() || "").toLowerCase();
+  }
+
+  function personName(id) {
+    var key = String(id || "").toLowerCase();
+    var who = state.profiles[key] || {};
+    if (who.name) return who.name;
+    if (key && key === myId() && state.me && state.me.name) return state.me.name;
+    return "Someone";
+  }
+
+  function localLine(body) {
+    return {
+      id: "local-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+      sender_id: myId(),
+      body: body,
+      created_at: new Date().toISOString(),
+      local: true
+    };
+  }
+
+  function liveLineHTML(line) {
+    return '<div class="live-line" data-hold="live" data-local="' + esc(line.id || "") + '"><span class="who">' +
+      esc(personName(line.sender_id)) + "</span> " + esc(line.body) + "</div>";
+  }
+
+  function chatLineHTML(row, prev, fresh) {
+    var user = state.profiles[state.chat] || {};
+    var mine = String(row.sender_id || "").toLowerCase() === myId();
+    var stampRow = stamp(row.created_at);
+    var showTime = !prev || stamp(prev.created_at) !== stampRow;
+    return (showTime && stampRow ? '<div class="chat-time">' + stampRow + "</div>" : "") +
+      '<div class="talk' + (fresh ? " fresh" : "") + " " + (mine ? "me" : "you") + '" data-hold="chat" data-local="' + esc(row.id || "") + '">' +
+        (mine ? "" : '<img class="face" src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + esc(state.chat || "") + '" />') +
+        '<div class="bubble">' + esc(row.body) + "</div>" +
+        (mine ? '<img class="face" src="' + esc((state.me && state.me.avatar_url) || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + esc(myId()) + '" />' : "") +
+      "</div>";
+  }
+
+  function applyPending() {
+    var used = {};
+    var rest = [];
+    (state.pending || []).forEach(function (item) {
+      var rows = state.lines[item.person] || [];
+      var echoed = rows.some(function (line) {
+        if (line.local || used[line.id]) return false;
+        var same = String(line.sender_id || "").toLowerCase() === item.row.sender_id && line.body === item.row.body;
+        if (!same) return false;
+        used[line.id] = 1;
+        return true;
+      });
+      if (echoed) return;
+      if (!rows.some(function (line) { return line.id === item.row.id; })) rows.push(item.row);
+      state.lines[item.person] = rows;
+      rest.push(item);
+    });
+    state.pending = rest;
+  }
+
+  function mergeRoom(server) {
+    var rows = takeLines(server);
+    var used = {};
+    (state.roomLines || []).forEach(function (line) {
+      if (!line.local) return;
+      var echoed = rows.some(function (item) {
+        if (used[item.id]) return false;
+        if (item.sender_id === line.sender_id && item.body === line.body) {
+          used[item.id] = 1;
+          return true;
+        }
+        return false;
+      });
+      if (!echoed) rows.push(line);
+    });
+    return rows;
+  }
+
   function liveView() {
     var room = state.rooms.filter(function (row) { return row.id === state.live; })[0] || {};
     var user = state.profiles[room.owner_id] || {};
     var photo = room.cover_url || "img/LiveStage.png";
     var clip = roomClip(room);
     var stage = clip
-      ? '<video class="stage" src="' + esc(clip) + '" autoplay muted loop playsinline webkit-playsinline></video>'
+      ? '<div class="stage-stack" data-clip="' + esc(clip) + '">' +
+          '<video class="stage" src="' + esc(clip) + '" playsinline webkit-playsinline muted preload="auto"></video>' +
+          '<video class="stage" src="' + esc(clip) + '" playsinline webkit-playsinline muted preload="auto"></video>' +
+        "</div>"
       : '<img class="stage" src="' + esc(photo) + '" alt="" />';
     var ids = audienceIds();
     var faces = ids.slice(0, 3).map(function (id) {
@@ -787,10 +1072,7 @@
     });
     if (!faces.length) faces = [user.avatar_url || "img/SampleAvatar.png"];
     var welcome = "Welcome! Respect others and keep chats positive. No hate or offensive comments. Enjoy our friendly live space.";
-    var lines = (state.roomLines || []).map(function (line) {
-      var who = state.profiles[line.sender_id] || {};
-      return '<div class="live-line" data-hold="live" data-id="' + (line.id || line.sender_id) + '"><span class="who">' + esc(who.name || "") + "</span> " + esc(line.body) + "</div>";
-    }).join("");
+    var lines = (state.roomLines || []).map(liveLineHTML).join("");
     var mine = room.owner_id && room.owner_id === API.me();
     return el(
       '<div class="live-room">' +
@@ -882,16 +1164,7 @@
   function chatView() {
     var user = state.profiles[state.chat] || {};
     var lines = (state.lines[state.chat] || []).map(function (row, i, all) {
-      var mine = row.sender_id === API.me();
-      var stampRow = stamp(row.created_at);
-      var prev = all[i - 1];
-      var showTime = !prev || stamp(prev.created_at) !== stampRow;
-      return (showTime && stampRow ? '<div class="chat-time">' + stampRow + "</div>" : "") +
-        '<div class="talk ' + (mine ? "me" : "you") + '" data-hold="chat" data-id="' + (row.id || i) + '">' +
-          (mine ? "" : '<img class="face" src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + esc(state.chat || "") + '" />') +
-          '<div class="bubble">' + esc(row.body) + "</div>" +
-          (mine ? '<img class="face" src="' + esc((state.me && state.me.avatar_url) || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + esc(API.me() || "") + '" />' : "") +
-        "</div>";
+      return chatLineHTML(row, all[i - 1], i === all.length - 1);
     }).join("");
     return el(
       '<div class="form-page">' +
@@ -917,23 +1190,20 @@
   }
 
   function aiView() {
-    var prompts = [
-      "Did you go skiing this weekend?",
-      "Do you usually go skiing alone, or hang out with a group of ski buddies?",
-      "Have you ever tried night skiing? I heard the lights on the slope look beautiful."
-    ];
+    var role = aiRole(state.aiId) || AI_ROLES[0];
+    var lines = aiLines(role.id);
     var body;
-    if (state.ai.length) {
-      body = state.ai.map(function (row) {
+    if (lines.length) {
+      body = lines.map(function (row) {
         var text = row.thinking ? "..." : esc(row.body) + (row.typing ? '<span class="ai-caret"></span>' : "");
         return '<div class="talk ' + (row.mine ? "me" : "you") + '">' +
-          (row.mine ? "" : '<img class="face" src="img/Penguin.png" alt="" />') +
+          (row.mine ? "" : '<img class="face" src="' + esc(role.avatar) + '" alt="" />') +
           '<div class="bubble">' + text + "</div>" +
           (row.mine ? '<img class="face" src="' + esc((state.me && state.me.avatar_url) || "img/AIUserFace.png") + '" alt="" />' : "") +
         "</div>";
       }).join("");
     } else {
-      body = prompts.map(function (text) {
+      body = role.prompts.map(function (text) {
         return '<button class="ai-prompt" type="button" data-act="ai-prompt" data-id="' + esc(text) + '">' +
           '<span class="q"><img src="img/AIPromptIcon.svg" alt="" /></span>' + esc(text) + "</button>";
       }).join("");
@@ -944,15 +1214,15 @@
           '<img class="home-sky" src="img/HomeSky.png" alt="" />' +
           '<img class="home-cap" src="img/SnowCap.png" alt="" />' +
           '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
-          '<div class="pegu-chip"><img src="img/Penguin.png" alt="" /><div><b>Pegu</b><span>5 /Message</span></div></div>' +
+          '<div class="pegu-chip"><img src="' + esc(role.avatar) + '" alt="" /><div><b>' + esc(role.name) + '</b><span>5 /Message</span></div></div>' +
           '<button class="head-icon more" data-act="about-ai"><img src="img/MoreCircle.svg" alt="" /></button>' +
           '<div class="home-marks">' +
             '<img class="home-flake-a" src="img/FlakeA.png" alt="" />' +
             '<img class="home-flake-b" src="img/FlakeB.png" alt="" />' +
             '<img class="home-flake-c" src="img/FlakeA.png" alt="" />' +
-            '<div class="home-title">Glide into winter with Pegu</div>' +
-            '<div class="home-blurb">Fresh snow, cool goggles and endless fun. Let this tiny skier bring warmth and joy to your snowy days.</div>' +
-            '<div class="home-penguin"><img src="img/Penguin.png" alt="" /></div>' +
+            '<div class="home-title">' + esc(role.title) + "</div>" +
+            (role.blurb ? '<div class="home-blurb">' + esc(role.blurb) + "</div>" : "") +
+            '<div class="home-penguin"><img src="' + esc(role.avatar) + '" alt="" /></div>' +
           "</div>" +
           '<img class="home-edge" src="img/SnowHem.png" alt="" />' +
         "</div>" +
@@ -965,16 +1235,18 @@
   }
 
   function callView() {
-    var user = state.profiles[state.chat] || {};
-    var photo = user.cover_url || user.avatar_url || "img/LiveStage.png";
+    var role = aiRole(state.chat);
+    var user = role || state.profiles[state.chat] || {};
+    var photo = role ? role.avatar : (user.avatar_url || remembered("avatar", state.chat) || "img/SampleAvatar.png");
     return el(
       '<div class="call-room">' +
         '<img class="bg" src="' + esc(photo) + '" alt="" />' +
         '<div class="veil"></div>' +
         '<video class="local" autoplay playsinline muted></video>' +
-        '<div class="call-meta"><b>' + esc(user.name || "") + "</b><span>Video Call...</span></div>" +
-        '<button class="hang" data-act="back"><img src="img/CallEnd.svg" alt="" /></button>' +
-      "</div>"
+        '<div class="call-stack">' +
+          '<div class="call-meta"><b>' + esc(user.name || role && role.name || "") + "</b><span>Video Call...</span></div>" +
+          '<button class="hang" data-act="back"><img src="img/CallEnd.svg" alt="" /></button>' +
+        "</div></div>"
     );
   }
 
@@ -1124,7 +1396,11 @@
     else ids = state.follows.filter(function (row) { return row.follower === API.me(); }).map(function (row) { return row.followee; });
     var title = kind === "fans" ? "Fans" : "Followed";
     var back = kind === "block" ? "settings" : "profile";
-    var rows = ids.map(function (id) {
+    var bots = kind === "block" ? "" : AI_ROLES.map(function (role) {
+      return '<button class="people-row" data-act="open-chat" data-id="' + role.id + '"><img src="' + esc(role.avatar) + '" alt="" />' +
+        '<span class="meta"><b>' + esc(role.name) + "</b><span>" + esc(role.handle) + "</span></span></button>";
+    }).join("");
+    var rows = bots + ids.map(function (id) {
       var user = state.profiles[id] || { name: id };
       var action = "";
       if (kind === "block") action = '<button class="pill-act gray" data-act="unblock" data-id="' + id + '">Remove</button>';
@@ -1248,7 +1524,11 @@
 
   function audienceRows() {
     var ids = audienceIds();
-    var rows = ids.map(function (id) {
+    var bots = AI_ROLES.map(function (role) {
+      return '<button class="people-row" data-act="open-chat" data-id="' + role.id + '"><img src="' + esc(role.avatar) + '" alt="" />' +
+        '<span class="meta"><b>' + esc(role.name) + "</b><span>" + esc(role.handle) + "</span></span></button>";
+    }).join("");
+    var rows = bots + ids.map(function (id) {
       var user = state.profiles[id] || {};
       var followed = following(id);
       return '<div class="people-row"><img src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" />' +
@@ -1317,6 +1597,7 @@
     if (act === "open-chat" && chatDrag.moved) { chatDrag.moved = false; return; }
     var openRow = node.closest(".chat-swipe.open");
     if (act === "open-chat" && openRow) { openRow.classList.remove("open"); return; }
+    if (node.closest("button")) Bridge.haptic();
     var gated = ["follow","live","like","like-room","open-chat","buy","gift","send-gift","call","compose","ai-prompt","people","pick"].indexOf(act) >= 0
       || (act === "go" && ["compose","shop","edit","settings","ai"].indexOf(node.getAttribute("data-to")) >= 0);
     if (gated && !needAuth()) return;
@@ -1327,15 +1608,22 @@
       if (act === "back") back();
       else if (act === "go") {
         var to = node.getAttribute("data-to");
+        if (to === "ai") { state.aiId = "ai:pegu"; state.ai = aiLines("ai:pegu"); }
         go(to, to === "profile" ? { profile: API.me() } : null);
       }
-      else if (act === "tab") { Bridge.haptic(); state.tab = id; state.route = "main"; draw(); }
+      else if (act === "tab") {
+        if (state.tab === id && state.route === "main") return;
+        state.tab = id;
+        state.route = "main";
+        motion = "fade";
+        draw();
+      }
       else if (act === "post-filter") { state.postFilter = id; draw(); }
       else if (act === "apple") await apple();
       else if (act === "agree") { await Bridge.eula(); go("auth"); }
       else if (act === "follow") {
         var who = String(id || "").toLowerCase();
-        if (!who || who === API.me()) return;
+        if (!who || who === API.me() || aiRole(who)) return;
         var on = !following(who);
         rememberFollow(who, on);
         draw();
@@ -1346,12 +1634,29 @@
         Bridge.toast(on ? "Followed." : "Unfollowed.");
       }
       else if (act === "live") {
-        await API.joinRoom(id).catch(function () {});
-        state.roomLines = takeLines(await API.roomMessages(id));
-        state.roomSig = lineSig(state.roomLines);
-        state.audience = await API.roomMembers(id).catch(function () { return []; });
+        var roomId = String(id || "");
+        var join = localLine("joined");
+        state.roomLines = [join];
+        state.roomSig = "";
         state.liveTime = 0;
-        go("live", { live: id });
+        state.audience = myId() ? [{ user_id: myId() }] : [];
+        go("live", { live: roomId });
+        API.joinRoom(roomId).catch(function () {}).then(function () {
+          return API.sendRoomMessage(roomId, "joined");
+        }).then(function () {
+          return API.roomMessages(roomId);
+        }).then(function (rows) {
+          if (state.route !== "live" || String(state.live) !== roomId) return;
+          state.roomLines = mergeRoom(rows);
+          state.roomSig = lineSig(state.roomLines);
+          draw();
+        }).catch(function () {});
+        API.roomMembers(roomId).then(function (rows) {
+          if (state.route === "live" && String(state.live) === roomId && rows) {
+            state.audience = rows;
+            draw();
+          }
+        }).catch(function () {});
       }
       else if (act === "like") {
         var pid = String(id || "").toLowerCase();
@@ -1376,8 +1681,14 @@
       }
       else if (act === "open-post") go("post", { post: id });
       else if (act === "open-chat") {
-        go("chat", { chat: id });
-        API.openThread(id).then(function () { return reload(); }).catch(function () {});
+        if (aiRole(id)) {
+          state.aiId = id;
+          state.ai = aiLines(id);
+          go("ai");
+        } else {
+          go("chat", { chat: id });
+          API.openThread(id).then(function () { return reload(); }).catch(function () {});
+        }
       }
       else if (act === "ask-delete-chat") {
         state.chat = id;
@@ -1417,21 +1728,35 @@
       else if (act === "gift") { state.sheet = "gift"; draw(); }
       else if (act === "send-gift") {
         var cost = Number(node.getAttribute("data-cost")) || 0;
-        if (((state.me && state.me.gems) || 0) < cost) {
+        var gems = (state.me && state.me.gems) || 0;
+        if (gems < cost) {
           Bridge.toast("Not enough coins.");
           go("shop");
           return;
         }
+        if (state.me) state.me.gems = gems - cost;
         state.sheet = null;
-        await API.joinRoom(state.live).catch(function () {});
-        var left = await API.sendGift(state.live, cost, id);
-        if (state.me && typeof left === "number") state.me.gems = left;
-        await API.sendRoomMessage(state.live, "sent a gift");
-        state.roomLines = takeLines(await API.roomMessages(state.live));
-        state.roomSig = lineSig(state.roomLines);
+        state.roomLines = (state.roomLines || []).concat([localLine("sent a gift")]);
         state.gift = id;
         draw();
-        setTimeout(function () { state.gift = ""; if (state.route === "live") draw(); }, 1800);
+        dismissGift();
+        var roomId = state.live;
+        var giftId = id;
+        API.joinRoom(roomId).catch(function () {}).then(function () {
+          return API.sendGift(roomId, cost, giftId);
+        }).then(function (left) {
+          if (state.me && typeof left === "number") state.me.gems = left;
+          return API.sendRoomMessage(roomId, "sent a gift");
+        }).then(function () {
+          return API.roomMessages(roomId);
+        }).then(function (rows) {
+          if (state.route !== "live" || state.live !== roomId) return;
+          state.roomLines = mergeRoom(rows);
+          state.roomSig = lineSig(state.roomLines);
+        }).catch(function (err) {
+          if (state.me) state.me.gems = gems;
+          Bridge.toast(err.message || String(err));
+        });
       }
       else if (act === "about-post") openAbout("post", id);
       else if (act === "about-chat") openAbout("chat", id);
@@ -1440,7 +1765,7 @@
       else if (act === "add-tag") { state.sheet = "tag"; draw(); }
       else if (act === "call") go("call");
       else if (act === "ai-prompt") { await sendAI(id); }
-      else if (act === "close-sheet") { state.sheet = null; draw(); }
+      else if (act === "close-sheet") closeSheet();
       else if (act === "close-preview") { state.preview = null; state.previewVideo = false; draw(); }
       else if (act === "preview") {
         var post = state.posts.filter(function (row) { return row.id === id; })[0];
@@ -1483,6 +1808,17 @@
         state.sheet = null; await reload(); Bridge.toast("Deleted."); back();
       }
       else if (act === "confirm-delete-chat") {
+        if (aiRole(state.chat)) {
+          state.aiBy[state.chat] = [];
+          if (state.aiId === state.chat) state.ai = state.aiBy[state.chat];
+          persistAI();
+          state.sheet = null;
+          var stayAI = state.route === "main";
+          draw();
+          Bridge.toast("Deleted.");
+          if (!stayAI) back();
+          return;
+        }
         if (state.threads[state.chat]) await API.hideThread(state.threads[state.chat]);
         state.sheet = null;
         var stay = state.route === "main";
@@ -1578,10 +1914,14 @@
         return;
       }
       if (kind === "comment" && !needAuth()) return;
-      if (kind === "chat" && !needAuth()) return;
-      if (kind === "live" && !needAuth()) return;
       if (kind === "ai" && !needAuth()) return;
       if (kind === "compose" && !needAuth()) return;
+      if (kind === "chat" || kind === "live") {
+        if (!body) return;
+        if (!needAuth()) return;
+        quietSend(kind, body, form);
+        return;
+      }
       busy = true;
       await Bridge.wait(true);
       if (kind === "signin") {
@@ -1607,21 +1947,6 @@
         if (!body) return;
         await API.addComment(state.post, body);
         await reload();
-      } else if (kind === "chat") {
-        if (!body) return;
-        if (!state.threads[state.chat]) {
-          await API.openThread(state.chat);
-          await reload();
-        }
-        await API.sendMessage(state.threads[state.chat], body);
-        await reload();
-      } else if (kind === "live") {
-        if (!body) return;
-        await API.joinRoom(state.live).catch(function () {});
-        await API.sendRoomMessage(state.live, body);
-        state.roomLines = takeLines(await API.roomMessages(state.live));
-        state.roomSig = lineSig(state.roomLines);
-        draw();
       } else if (kind === "ai") { await sendAI(body); }
       else if (kind === "tag") {
         var tag = body.replace(/^#/, "").trim();
@@ -1668,23 +1993,29 @@
   async function sendAI(text) {
     var body = String(text || "").trim();
     if (!body) return;
-    state.ai.push({ mine: true, body: body });
+    var role = aiRole(state.aiId) || AI_ROLES[0];
+    state.aiId = role.id;
+    var lines = aiLines(role.id);
+    state.ai = lines;
+    lines.push({ mine: true, body: body });
     var think = { mine: false, body: "", thinking: true };
-    state.ai.push(think);
+    lines.push(think);
     draw();
     try {
-      await API.addAI(true, body);
+      if (role.id === "ai:pegu") await API.addAI(true, body);
       await API.spendGems(5);
     } catch (err) {
-      state.ai.pop();
+      lines.pop();
+      lines.pop();
+      persistAI();
       draw();
       Bridge.toast(err.message || String(err));
       return;
     }
     think.thinking = false;
-    var reply = "The snow looks good today.";
-    await typeAI(think, reply);
-    try { await API.addAI(false, reply); } catch (err) {}
+    await typeAI(think, role.reply);
+    persistAI();
+    if (role.id === "ai:pegu") { try { await API.addAI(false, role.reply); } catch (err) {} }
   }
 
   async function typeAI(item, text) {
@@ -1706,12 +2037,14 @@
       var typing = document.activeElement && (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA");
       if (typing) return;
       if (state.route === "live" && state.live) {
-        API.roomMessages(state.live).then(function (rows) {
-          if (state.route !== "live") return;
-          var next = lineSig(rows);
+        var roomId = state.live;
+        API.roomMessages(roomId).then(function (rows) {
+          if (state.route !== "live" || state.live !== roomId) return;
+          var merged = mergeRoom(rows);
+          var next = lineSig(merged);
           if (next === state.roomSig) return;
           state.roomSig = next;
-          state.roomLines = takeLines(rows);
+          state.roomLines = merged;
           draw();
         }).catch(function () {});
       } else if (state.route === "chat" && state.chat) {
@@ -1732,21 +2065,129 @@
   }
 
   function startLive() {
-    var video = document.querySelector(".live-room video.stage");
-    if (!video) return;
-    video.muted = true;
-    video.defaultMuted = true;
-    video.loop = true;
-    var stamp = state.liveTime || 0;
-    function resume() {
-      if (stamp > 0.2) {
-        try { video.currentTime = stamp; } catch (err) {}
-      }
-      var play = video.play();
-      if (play && play.catch) play.catch(function () {});
+    var stack = document.querySelector(".live-room .stage-stack");
+    if (!stack || stack.getAttribute("data-armed") === "1") return;
+    var clips = stack.querySelectorAll("video");
+    if (clips.length < 2) return;
+    stack.setAttribute("data-armed", "1");
+    var lead = clips[0];
+    var next = clips[1];
+    [lead, next].forEach(function (video) {
+      video.muted = true;
+      video.defaultMuted = true;
+      video.loop = false;
+      video.playsInline = true;
+      video.preload = "auto";
+    });
+    lead.style.opacity = "1";
+    next.style.opacity = "0";
+    lead.style.zIndex = "1";
+    next.style.zIndex = "0";
+    function play(video) {
+      var pending = video.play();
+      if (pending && pending.catch) pending.catch(function () {});
+      return pending;
     }
-    if (video.readyState >= 1) resume();
-    else video.addEventListener("loadedmetadata", resume);
+    var warmed = play(next);
+    if (warmed && warmed.then) warmed.then(function () {
+      next.pause();
+      try { next.currentTime = 0; } catch (err) {}
+    }).catch(function () {});
+    play(lead);
+    var handoff = false;
+    function pump() {
+      if (!stack.isConnected) return;
+      if (lead.duration && isFinite(lead.duration)) {
+        var remain = lead.duration - lead.currentTime;
+        if (!handoff && lead.currentTime > 0.3 && remain < 0.12 && remain > 0) {
+          handoff = true;
+          try { next.currentTime = 0; } catch (err) {}
+          play(next);
+          next.style.opacity = "1";
+          lead.style.opacity = "0";
+          var done = lead;
+          lead = next;
+          next = done;
+          lead.style.zIndex = "1";
+          next.style.zIndex = "0";
+          setTimeout(function () {
+            next.pause();
+            try { next.currentTime = 0; } catch (err) {}
+            handoff = false;
+          }, 80);
+        }
+      }
+      requestAnimationFrame(pump);
+    }
+    requestAnimationFrame(pump);
+  }
+
+  function dismissGift() {
+    setTimeout(function () {
+      var fx = document.querySelector(".gift-fx");
+      if (fx) fx.classList.add("out");
+    }, 1400);
+    setTimeout(function () {
+      state.gift = "";
+      if (state.route === "live") draw();
+    }, 1680);
+  }
+
+  function quietSend(kind, body, form) {
+    var input = form.querySelector("input[name=body], textarea[name=body]");
+    if (input) input.value = "";
+    if (kind === "chat") {
+      var person = state.chat;
+      var row = localLine(body);
+      var previous = (state.lines[person] || []).slice(-1)[0];
+      state.lines[person] = (state.lines[person] || []).concat([row]);
+      state.pending = (state.pending || []).concat([{ person: person, row: row }]);
+      var box = document.querySelector(".chat-thread");
+      if (box && state.route === "chat") {
+        var empty = box.querySelector(".empty-pen");
+        if (empty) empty.remove();
+        box.insertAdjacentHTML("beforeend", chatLineHTML(row, previous, true));
+        box.scrollTop = box.scrollHeight;
+      } else draw();
+      var ready = state.threads[person]
+        ? Promise.resolve(state.threads[person])
+        : API.openThread(person).then(function () { return reload(); }).then(function () { return state.threads[person]; });
+      ready.then(function (thread) {
+        if (!thread) throw new Error("Could not open chat");
+        return API.sendMessage(thread, body);
+      }).then(function () {
+        return reload();
+      }).catch(function (err) {
+        state.pending = (state.pending || []).filter(function (item) { return item.row.id !== row.id; });
+        if (state.lines[person]) state.lines[person] = state.lines[person].filter(function (line) { return line.id !== row.id; });
+        var node = document.querySelector('[data-local="' + row.id + '"]');
+        if (node) node.remove();
+        Bridge.toast(err.message || String(err));
+      });
+      return;
+    }
+    var roomId = state.live;
+    var line = localLine(body);
+    state.roomLines = (state.roomLines || []).concat([line]);
+    var liveBox = document.querySelector(".live-chat");
+    if (liveBox && state.route === "live") {
+      liveBox.insertAdjacentHTML("beforeend", liveLineHTML(line));
+      liveBox.scrollTop = liveBox.scrollHeight;
+    } else draw();
+    API.joinRoom(roomId).catch(function () {}).then(function () {
+      return API.sendRoomMessage(roomId, body);
+    }).then(function () {
+      return API.roomMessages(roomId);
+    }).then(function (rows) {
+      if (state.route !== "live" || state.live !== roomId) return;
+      state.roomLines = mergeRoom(rows);
+      state.roomSig = lineSig(state.roomLines);
+    }).catch(function (err) {
+      state.roomLines = (state.roomLines || []).filter(function (item) { return item.id !== line.id; });
+      var node = document.querySelector('[data-local="' + line.id + '"]');
+      if (node) node.remove();
+      Bridge.toast(err.message || String(err));
+    });
   }
 
   function startCamera() {
