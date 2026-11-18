@@ -1386,19 +1386,21 @@
     var role = aiRole(state.aiId) || AI_ROLES[0];
     var lines = aiLines(role.id);
     var body;
-    if (lines.length) {
+    if (state.aiFaq || !lines.length) {
+      body = role.prompts.map(function (text) {
+        return '<button class="ai-prompt" type="button" data-act="ai-prompt" data-id="' + esc(text) + '">' +
+          '<span class="q"><img src="img/AIPromptIcon.svg" alt="" /></span>' + esc(text) + "</button>";
+      }).join("");
+    } else {
       body = lines.map(function (row) {
-        var text = row.thinking ? "..." : esc(row.body) + (row.typing ? '<span class="ai-caret"></span>' : "");
+        var text = row.recharge
+          ? esc(row.body) + '<button type="button" class="recharge" data-act="go" data-to="shop">Click here to recharge</button>'
+          : (row.thinking ? "..." : esc(row.body) + (row.typing ? '<span class="ai-caret"></span>' : ""));
         return '<div class="talk ' + (row.mine ? "me" : "you") + '">' +
           (row.mine ? "" : '<img class="face" src="' + esc(role.avatar) + '" alt="" data-act="profile" data-id="' + esc(role.id) + '" />') +
           '<div class="bubble">' + text + "</div>" +
           (row.mine ? '<img class="face" src="' + esc((state.me && state.me.avatar_url) || "img/AIUserFace.png") + '" alt="" data-act="profile" data-id="' + esc(myId()) + '" />' : "") +
         "</div>";
-      }).join("");
-    } else {
-      body = role.prompts.map(function (text) {
-        return '<button class="ai-prompt" type="button" data-act="ai-prompt" data-id="' + esc(text) + '">' +
-          '<span class="q"><img src="img/AIPromptIcon.svg" alt="" /></span>' + esc(text) + "</button>";
       }).join("");
     }
     return el(
@@ -1420,7 +1422,7 @@
           '<img class="home-edge" src="img/SnowHem.png" alt="" />' +
         "</div>" +
         '<div class="scroll ai-body">' +
-          '<div class="form-label"><img src="img/FieldBell.png" alt="" />All Chat</div>' + body +
+          '<div class="form-label"><img src="img/FieldBell.png" alt="" />' + (state.aiFaq && lines.length ? "Common Questions" : "All Chat") + "</div>" + body +
         "</div>" +
         '<form class="pink-enter" data-form="ai"><img src="img/CommentSend.svg" alt="" /><input name="body" placeholder="Please enter..." /></form>' +
       "</div>"
@@ -1653,7 +1655,8 @@
         rows = '<button class="set-row" data-act="report"><img src="img/MenuReport.svg" alt="" /><span>Report</span></button>' +
           '<button class="set-row" data-act="delete-target"><img src="img/SetTrash.svg" alt="" /><span>Delete Chat</span></button>';
       } else if (state.aboutKind === "ai") {
-        rows = '<button class="set-row" data-act="report"><img src="img/MenuReport.svg" alt="" /><span>Report</span></button>';
+        rows = '<button class="set-row" data-act="ai-faq"><img src="img/AIPromptIcon.svg" alt="" /><span>Common Questions</span></button>' +
+          '<button class="set-row" data-act="report"><img src="img/MenuReport.svg" alt="" /><span>Report</span></button>';
       } else if (state.aboutMine) {
         rows = "";
       } else {
@@ -1828,7 +1831,12 @@
     var locking = act === "follow" || act === "like" || act === "like-room";
     if (locking) busy = true;
     try {
-      if (act === "back") back();
+      if (act === "back") {
+        if (state.route === "ai" && state.aiFaq && aiLines(state.aiId).length) {
+          state.aiFaq = false;
+          draw();
+        } else back();
+      }
       else if (act === "go") {
         var to = node.getAttribute("data-to");
         if (to === "ai") { state.aiId = AI_ROLES[0].id; state.ai = aiLines(AI_ROLES[0].id); }
@@ -2025,6 +2033,7 @@
       else if (act === "about-chat") openAbout("chat", id);
       else if (act === "about-person") openAbout("live", id);
       else if (act === "about-ai") openAbout("ai", "pegu");
+      else if (act === "ai-faq") { state.aiFaq = true; state.sheet = null; draw(); }
       else if (act === "add-tag") { keepDraft(); state.sheet = "tag"; draw(); }
       else if (act === "call") go("call");
       else if (act === "ai-prompt") { await sendAI(id); }
@@ -2285,39 +2294,91 @@
     }
   }
 
+  function peguReply(text, lines) {
+    var q = String(text || "").trim();
+    var low = q.toLowerCase();
+    var prev = "";
+    for (var i = (lines || []).length - 1; i >= 0; i--) {
+      if (!lines[i].mine && lines[i].body && !lines[i].recharge && !lines[i].thinking) {
+        prev = String(lines[i].body).toLowerCase();
+        break;
+      }
+    }
+    if (/^(yes|yeah|yep|sure|ok|okay)\b/.test(low)) {
+      if (prev.indexOf("night") >= 0) return "Then come after dark. The lights on the slope look like stars sitting on the snow.";
+      if (prev.indexOf("alone") >= 0 || prev.indexOf("buddies") >= 0) return "Good. I'll keep a seat on the lift. A small group makes the long runs easier.";
+      if (prev.indexOf("weekend") >= 0) return "Then let's go. I'll meet you by the beginner lift if the snow is soft.";
+      return "Good. Tell me which run you want, and I'll ski it with you.";
+    }
+    if (/^(no|nope|nah)\b/.test(low)) {
+      return "That's all right. We can stay on the easy slope and take it slow.";
+    }
+    if (low.indexOf("weekend") >= 0) return "I did go. The snow was fresh and the lift line was short. Did you get out too?";
+    if (low.indexOf("alone") >= 0 || low.indexOf("buddies") >= 0 || low.indexOf("group") >= 0) {
+      return "I like a small group. Skiing alone is quiet, but buddies make the long runs warmer.";
+    }
+    if (low.indexOf("night") >= 0) return "Yes. Night skiing is my favorite. The slope lights turn the snow blue.";
+    if (low.indexOf("rent") >= 0 || low.indexOf("boot") >= 0 || low.indexOf("pole") >= 0 || low.indexOf("helmet") >= 0 || low.indexOf("goggle") >= 0) {
+      return "Rent the skis, boots and poles at the resort. Buy your own helmet, goggles and base layers.";
+    }
+    if (low.indexOf("where") >= 0) return "The easy slope is the one with the wide snow and the short lift. I can wait for you there.";
+    if (low.indexOf("fall") >= 0 || low.indexOf("crash") >= 0 || low.indexOf("scared") >= 0 || low.indexOf("afraid") >= 0) {
+      return "Falls happen. Bend your knees, look downhill, and stand up when you are ready. I will wait.";
+    }
+    if (low.indexOf("hello") >= 0 || low.indexOf("hi") === 0 || low.indexOf("hey") === 0) {
+      return "Hi. I'm Pegu. Tell me about your last run, or pick a question above.";
+    }
+    var clip = q.length > 90 ? q.slice(0, 87) + "..." : q;
+    return "You said \"" + clip + "\". I picture that on the snow. What happened next on the slope?";
+  }
+
+  function askRecharge(lines, body) {
+    lines.push({ mine: true, body: body });
+    lines.push({ mine: false, recharge: true, body: "You need 5 coins for a reply. " });
+    state.aiFaq = false;
+    persistAI();
+    draw();
+  }
+
   async function sendAI(text) {
     var body = String(text || "").trim();
     if (!body) return;
     var role = aiRole(state.aiId) || AI_ROLES[0];
     state.aiId = role.id;
+    state.aiFaq = false;
     var lines = aiLines(role.id);
     state.ai = lines;
+    var gems = Number((state.me && (state.me.gems != null ? state.me.gems : state.me.coins)) || 0);
+    if (gems < 5) {
+      askRecharge(lines, body);
+      return;
+    }
     lines.push({ mine: true, body: body });
     var think = { mine: false, body: "", thinking: true };
     lines.push(think);
     draw();
     try {
-      if (role.id === AI_ROLES[0].id) {
-        try { await API.addAI(true, body); } catch (err) {}
-      }
+      try { await API.addAI(true, body); } catch (err) {}
       var left = await API.spendGems(5);
       if (state.me && typeof left === "number") state.me.gems = left;
     } catch (err) {
+      lines.pop();
+      lines.pop();
       var msg = String((err && err.message) || err);
       if (/not enough/i.test(msg)) {
-        lines.pop();
-        lines.pop();
-        persistAI();
-        draw();
-        Bridge.toast("Not enough coins.");
-        go("shop");
+        askRecharge(lines, body);
         return;
       }
+      persistAI();
+      draw();
+      Bridge.toast(msg);
+      return;
     }
     if (state.route !== "ai") { persistAI(); return; }
-    await typeAI(think, role.reply);
+    var answer = peguReply(body, lines);
+    await typeAI(think, answer);
     persistAI();
-    if (role.id === AI_ROLES[0].id) { try { await API.addAI(false, role.reply); } catch (err) {} }
+    try { await API.addAI(false, answer); } catch (err) {}
   }
 
   async function typeAI(item, text) {

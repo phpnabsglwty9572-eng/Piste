@@ -740,6 +740,10 @@ img.avatar-wait { background: none; animation: none; }
   border: 1px solid var(--blue); background: #fff; font-size: 14px;
 }
 .talk.me .bubble { border: 0; background: #def0ff; border-radius: 10px 0 10px 10px; }
+.bubble .recharge {
+  display: inline; border: 0; padding: 0; background: none;
+  color: var(--blue); font: inherit; font-weight: 800; text-decoration: underline;
+}
 .chat-enter {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 16px calc(12px + var(--safe-bottom) + var(--kb, 0px));
@@ -936,29 +940,47 @@ img.avatar-wait { background: none; animation: none; }
 .shop-head .form-back { top: 36px; z-index: 4; }
 .shop-head .form-title { top: 39px; z-index: 4; }
 .shop-grid {
-  display: grid; grid-template-columns: 165px 165px; gap: 16px;
+  display: grid; grid-template-columns: 165px 165px; column-gap: 13px; row-gap: 16px;
   padding: 16px; justify-content: center;
 }
 .pack {
-  width: 165px; height: 170px; border: 2px solid var(--ice);
-  border-radius: 10px; background: #fff; padding: 8px 4px;
-  box-shadow: 0 4px 0 #4860ff; position: relative;
+  width: 165px; height: 166px; border: 0; border-radius: 0;
+  background: transparent; padding: 0; box-shadow: none; position: relative; z-index: 1;
+}
+.pack::before {
+  content: "";
+  position: absolute; left: 0; top: 0; width: 165px; height: 150px;
+  background: #fff; border: 2px solid #ff00b2; border-radius: 10px;
+  box-shadow: 0 4px 0 #cd008f; pointer-events: none;
+}
+.pack::after {
+  content: "";
+  position: absolute; left: 2px; top: 105px; width: 161px; height: 43px;
+  background: #fcdbff; border-radius: 0 0 8px 8px; pointer-events: none;
 }
 .shop-grid { position: relative; }
 .shop-frame {
-  position: absolute; left: 0; top: 0; width: 165px; height: 170px;
+  position: absolute; left: 0; top: 0; width: 165px; height: 150px;
   border: 2px solid var(--pink); border-radius: 10px;
-  box-shadow: 0 4px 0 #cd008f; pointer-events: none; z-index: 3;
+  box-shadow: 0 4px 0 #cd008f; pointer-events: none; z-index: 0;
   transition: transform .34s cubic-bezier(0.32, 0.72, 0, 1);
 }
-.pack.on { border-color: var(--ice); box-shadow: 0 4px 0 #4860ff; }
-.pack .art { width: 105px; height: 90px; object-fit: contain; display: block; margin: 0 auto; }
-.pack .meta { display: flex; align-items: center; justify-content: center; gap: 4px; font-weight: 800; }
+.pack .art {
+  position: absolute; left: 30px; top: 0; z-index: 1;
+  width: 105px; height: 105px; object-fit: contain; display: block; margin: 0;
+}
+.pack .meta {
+  position: absolute; left: 0; right: 0; top: 111px; z-index: 2; height: 20px;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  font-weight: 800; font-size: 14px; color: #111;
+}
 .pack .meta img { width: 14px; height: 14px; }
 .pack .price {
-  display: block; margin: 6px auto 0; width: 125px; height: 32px;
-  background: var(--yellow); border: 2px solid var(--blue); border-radius: 10px;
-  font-family: "Bakbak One", sans-serif; font-size: 20px; line-height: 28px;
+  position: absolute; left: 20px; top: 134px; z-index: 4;
+  width: 125px; height: 32px; margin: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: #ffe412; border: 2px solid #2a75ee; border-radius: 10px;
+  font-family: "Bakbak One", sans-serif; font-size: 20px; line-height: 28px; color: #111;
 }
 
 .people-list { padding: 16px; }
