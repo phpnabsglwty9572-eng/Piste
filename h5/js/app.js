@@ -22,6 +22,9 @@
     chat: null,
     profile: null,
     roomLines: [],
+    roomSig: "",
+    audience: [],
+    liveTime: 0,
     ai: [],
     form: { email: "", password: "", name: "" },
     composeKind: "image",
@@ -33,7 +36,8 @@
     reportTarget: "",
     eula: "",
     kb: 0,
-    preview: null
+    preview: null,
+    ready: false
   };
   var stack = [];
   var busy = false;
@@ -81,6 +85,16 @@
     document.getElementById("app").addEventListener("submit", onSubmit);
     document.getElementById("app").addEventListener("contextmenu", onHold);
     document.getElementById("app").addEventListener("input", onFormInput);
+    document.getElementById("app").addEventListener("error", function (event) {
+      var img = event.target;
+      if (!img || img.tagName !== "IMG" || !img.hasAttribute("data-fallback")) return;
+      var fallback = img.getAttribute("data-fallback");
+      if (!fallback || img.getAttribute("src") === fallback) {
+        if (!fallback) img.remove();
+        return;
+      }
+      img.src = fallback;
+    }, true);
     document.getElementById("app").dataset.ready = "1";
     var start = env.startRoute || (location.hash || "").replace(/^#/, "");
     if (start === "posts") { state.tab = "post"; state.postFilter = "popular"; go("main"); }
@@ -110,24 +124,58 @@
     } else if (start) {
       go(start);
     } else {
-      go("auth");
+      state.route = "boot";
+      draw();
     }
     Bridge.post("ready");
+    var settled = false;
+    function settle() {
+      if (settled) return;
+      settled = true;
+      Bridge.post("settled");
+    }
+    window.__settle = settle;
+    var keepAuth = ["auth", "signin", "register", "register2"].indexOf(start) >= 0;
     if (env.accessToken) {
+      if (!keepAuth) settle();
       try {
         await reload();
         if (["posts","posts-followed","chats","live","gift","post","compose","chat","profile","settings","shop","followed","fans","block","edit","feedback","logout","erase","about","audience","report","tag","ai","call","giftfx","about-post","about-chat","video","delete-post","delete-chat","live-block","register2"].indexOf(start) >= 0) window.goTo(start);
-        else go("main");
-      } catch (err) { go("auth"); }
+        else if (!keepAuth) go("main");
+      } catch (err) { if (!keepAuth) go("auth"); }
+      settle();
+    } else if (state.route === "boot") {
+      setTimeout(function () {
+        if (state.route === "boot") go("auth");
+        settle();
+      }, 900);
+    } else {
+      settle();
     }
   }
 
   function applyNativeSession(payload) {
     if (payload.accessToken) API.setTokens(payload.accessToken, payload.refreshToken, payload.meID);
     state.signedIn = !!payload.signedIn;
+    if (state.route === "boot") {
+      var start = (Bridge.env().startRoute || "");
+      var keepAuth = ["auth", "signin", "register", "register2"].indexOf(start) >= 0;
+      if (payload.signedIn && !keepAuth) {
+        stack = [];
+        go("main");
+        if (window.__settle) window.__settle();
+        reload().catch(function () {});
+      } else {
+        go(keepAuth ? start : "auth");
+        if (window.__settle) window.__settle();
+      }
+      return;
+    }
     state.me.name = payload.meName || state.me.name;
     state.me.gems = payload.coins || 0;
-    if (payload.signedIn && (state.route === "auth" || state.route === "signin" || state.route === "register" || state.route === "register2")) {
+    var pinned = (Bridge.env().startRoute || "");
+    var keepAuth = ["auth", "signin", "register", "register2"].indexOf(pinned) >= 0;
+    if (payload.signedIn && !keepAuth && (state.route === "auth" || state.route === "signin" || state.route === "register" || state.route === "register2")) {
       reload().then(function () { stack = []; go("main"); }).catch(function () {});
     }
     if (payload.signedIn === false && state.route !== "auth" && state.route !== "signin" && state.route !== "register" && state.route !== "register2") {
@@ -137,6 +185,16 @@
   }
 
   async function reload() {
+    try {
+      await loadFeed();
+    } finally {
+      state.ready = true;
+      applyRemembered();
+      draw();
+    }
+  }
+
+  async function loadFeed() {
     var profiles = await API.profiles();
     var map = {};
     profiles.forEach(function (row) {
@@ -201,7 +259,6 @@
         time: stamp(last && last.created_at)
       });
     });
-    draw();
   }
 
   window.goTo = function (route) {
@@ -226,7 +283,8 @@
     else if (route === "delete-post") { go("post"); state.sheet = "delete-post"; draw(); }
     else if (route === "delete-chat") { go("chat"); state.sheet = "delete-chat"; draw(); }
     else if (route === "live-block") { go("live"); state.sheet = "blacklist"; draw(); }
-    else go(route);
+    else if (route === "home") { state.tab = "home"; go("main"); }
+    else if (route === "home-about") { state.tab = "home"; go("main"); state.sheet = "logout"; draw(); }
   };
   function snap() {
     return {
@@ -291,9 +349,12 @@
   }
 
   function draw() {
+    var playing = document.querySelector(".live-room video.stage");
+    if (playing) state.liveTime = playing.currentTime || 0;
     var root = document.getElementById("app");
     document.documentElement.style.setProperty("--kb", (state.kb || 0) + "px");
-    if (state.route === "auth") root.replaceChildren(authView());
+    if (state.route === "boot") root.replaceChildren(el('<div class="auth"></div>'));
+    else if (state.route === "auth") root.replaceChildren(authView());
     else if (state.route === "register" || state.route === "signin") root.replaceChildren(formView());
     else if (state.route === "register2") root.replaceChildren(registerPhotosView());
     else if (state.route === "eula") root.replaceChildren(eulaView());
@@ -321,6 +382,7 @@
     }
     startPoll();
     if (state.route === "call") startCamera();
+    if (state.route === "live") startLive();
   }
 
   function authView() {
@@ -343,8 +405,8 @@
   }
 
   function formChrome(title, back) {
-    return '<div class="form-head">' +
-      '<img class="form-sky" src="img/AuthSky.png" alt="" />' +
+    return '<div class="form-head auth-head">' +
+      '<img class="form-sky" src="img/FormSky.png" alt="" />' +
       '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
       '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
       '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
@@ -407,6 +469,7 @@
           tabBtn("home", "home", "TabHome.png", "TabHomeOff.png") +
           tabBtn("post", "post", "TabPostOn.png", "TabPost.png") +
           tabBtn("chat", "chat", "TabChatOn.png", "TabChat.png") +
+          '<img class="tab-snow" src="img/TabSnow.png" alt="" />' +
         "</div></div>"
     );
   }
@@ -418,7 +481,7 @@
 
   function homeList() {
     var me = state.profiles[API.me()] || state.me || {};
-    var face = me.avatar_url || "img/AIUserFace.png";
+    var face = me.avatar_url || fileURL(API.me(), "avatar.jpg") || "img/AIUserFace.png";
     var cards = state.rooms.map(homeCard).join("");
     var empty = emptyPen();
     return '<div class="scroll">' +
@@ -433,8 +496,8 @@
           '<button class="home-title" data-act="go" data-to="ai">Glide into winter with Pegu</button>' +
           '<button class="home-blurb" data-act="go" data-to="ai">Fresh snow, cool goggles and endless fun. Let this tiny skier bring warmth and joy to your snowy days.</button>' +
           '<button class="home-penguin" data-act="go" data-to="ai"><img src="img/Penguin.png" alt="" style="width:150px;height:140px;object-fit:cover" /></button>' +
-          '<button class="home-avatar" data-act="back">' +
-            '<img class="face" src="' + esc(face) + '" alt="" />' +
+          '<button class="home-avatar" data-act="go" data-to="profile">' +
+            '<img class="face" src="' + esc(face) + '" alt="" data-fallback="img/AIUserFace.png" />' +
             '<img class="frame" src="img/AvatarFrame.png" alt="" />' +
             '<img class="edit" src="img/EditBadge.svg" alt="" />' +
           "</button>" +
@@ -466,9 +529,69 @@
       "</article>";
   }
 
+  function fileURL(id, name) {
+    var root = (Bridge.env().supabaseURL || "").replace(/\/$/, "");
+    if (!root || !id) return "";
+    return root + "/storage/v1/object/public/media/" + id + "/" + name + "?v=" + Math.floor(Date.now() / 60000);
+  }
+
+  function mediaKey(kind, id) { return "yoohoo." + kind + "." + id; }
+
+  function remembered(kind, id) {
+    if (!id) return "";
+    try { return localStorage.getItem(mediaKey(kind, id)) || ""; } catch (err) { return ""; }
+  }
+
+  function rememberMedia(kind, url) {
+    var id = API.me();
+    if (!id || !url) return url || "";
+    var fresh = String(url).split("?")[0] + "?v=" + Date.now();
+    try { localStorage.setItem(mediaKey(kind, id), fresh); } catch (err) {}
+    return fresh;
+  }
+
+  function applyRemembered() {
+    var id = API.me();
+    var row = id && state.profiles[id];
+    if (!row) return;
+    var avatar = remembered("avatar", id);
+    var cover = remembered("cover", id);
+    if (!row.avatar_url && avatar) row.avatar_url = avatar;
+    if (!row.cover_url && cover) row.cover_url = cover;
+    state.me = row;
+  }
+
+  function plainError(text) {
+    var raw = String(text || "");
+    try {
+      var body = JSON.parse(raw);
+      return body.message || body.error || "Could not upload the photo.";
+    } catch (err) {
+      return raw || "Could not upload the photo.";
+    }
+  }
+
+  async function uploadPick(item, path) {
+    if (item && item.id) {
+      var sent = await Bridge.upload(item.id, path);
+      if (!sent || sent.ok === false) throw new Error(plainError(sent && sent.message));
+      if (!sent.url) throw new Error("Could not upload the photo.");
+      return sent.url;
+    }
+    var uri = (item && item.uri) || (typeof item === "string" ? item : "");
+    if (!uri) throw new Error("Choose a photo again.");
+    return API.upload(path, uri, (item && item.mime) || "image/jpeg");
+  }
+
+  function pickedItems(payload) {
+    if (!payload) return [];
+    if (payload.items) return payload.items;
+    if (payload.payload && payload.payload.items) return payload.payload.items;
+    return [];
+  }
+
   function pickedURI(payload) {
-    var items = (payload && payload.items) || [];
-    return (items[0] || {}).uri || "";
+    return (pickedItems(payload)[0] || {}).uri || "";
   }
 
   function splitTags(body) {
@@ -483,7 +606,10 @@
   }
 
   function emptyPen(size) {
-    return '<div class="empty-pen' + (size ? " " + size : "") + '"><img class="pen" src="img/Penguin.png" alt="" /><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></div>';
+    var note = state.ready
+      ? '<span class="msg">No data</span>'
+      : '<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>';
+    return '<div class="empty-pen' + (size ? " " + size : "") + '"><img class="pen" src="img/Penguin.png" alt="" />' + note + "</div>";
   }
 
   function postList() {
@@ -496,7 +622,7 @@
     var empty = emptyPen();
     return '<div class="feed-page">' +
       '<div class="feed-head">' +
-        '<img class="form-sky" src="img/AuthSky.png" alt="" />' +
+        '<img class="form-sky" src="img/FormSky.png" alt="" />' +
         '<button class="form-back" data-act="tab" data-id="home"><img src="img/BackButton.svg" alt="" /></button>' +
         '<div class="form-title">Post</div>' +
         '<button class="post-chip" data-act="go" data-to="compose"><img class="badge" src="img/PostBadge.png" alt="" /><span>POST</span><img class="pen" src="img/Pencil.svg" alt="" /></button>' +
@@ -555,7 +681,7 @@
     }).join("");
     return '<div class="feed-page">' +
       '<div class="feed-head short">' +
-        '<img class="form-sky" src="img/AuthSky.png" alt="" />' +
+        '<img class="form-sky" src="img/FormSky.png" alt="" />' +
         '<button class="form-back" data-act="tab" data-id="home"><img src="img/BackButton.svg" alt="" /></button>' +
         '<div class="form-title">Chat</div>' +
         '<button class="gem-chip" data-act="go" data-to="ai"><img src="img/Coin5.png" alt="" /><span>' + gems + '</span><img class="plus" src="img/CoinPlus.svg" alt="" /></button>' +
@@ -569,26 +695,58 @@
       "</div></div>";
   }
 
+  function roomClip(room) {
+    if (room.video_url) return room.video_url;
+    var posts = state.posts.filter(function (post) {
+      return post.author_id === room.owner_id && String(post.media_url || "").indexOf(".mp4") >= 0;
+    });
+    return posts.length ? posts[0].media_url : "";
+  }
+
+  function audienceIds() {
+    var seen = {};
+    var ids = [];
+    function add(id) {
+      id = String(id || "").toLowerCase();
+      if (!id || seen[id]) return;
+      seen[id] = 1;
+      ids.push(id);
+    }
+    (state.audience || []).forEach(function (row) { add(row.user_id); });
+    (state.roomLines || []).forEach(function (line) { add(line.sender_id); });
+    return ids;
+  }
+
   function liveView() {
     var room = state.rooms.filter(function (row) { return row.id === state.live; })[0] || {};
     var user = state.profiles[room.owner_id] || {};
     var photo = room.cover_url || "img/LiveStage.png";
-    var faces = ["img/LiveFace1.png", "img/LiveFace2.png", "img/LiveFace3.png"];
+    var clip = roomClip(room);
+    var stage = clip
+      ? '<video class="stage" src="' + esc(clip) + '" autoplay muted loop playsinline webkit-playsinline></video>'
+      : '<img class="stage" src="' + esc(photo) + '" alt="" />';
+    var ids = audienceIds();
+    var faces = ids.slice(0, 3).map(function (id) {
+      var person = state.profiles[id] || {};
+      return person.avatar_url || "img/SampleAvatar.png";
+    });
+    if (!faces.length) faces = [user.avatar_url || "img/SampleAvatar.png"];
     var welcome = "Welcome! Respect others and keep chats positive. No hate or offensive comments. Enjoy our friendly live space.";
     var lines = (state.roomLines || []).map(function (line) {
       var who = state.profiles[line.sender_id] || {};
       return '<div class="live-line" data-hold="live" data-id="' + (line.id || line.sender_id) + '"><span class="who">' + esc(who.name || "") + "</span> " + esc(line.body) + "</div>";
     }).join("");
+    var mine = room.owner_id && room.owner_id === API.me();
     return el(
       '<div class="live-room">' +
-        '<img class="stage" src="' + esc(photo) + '" alt="" />' +
+        stage +
         '<div class="live-badge"><img src="img/LiveGlyph.svg" alt="" />Live</div>' +
         '<button class="viewers" data-act="audience">' + faces.map(function (src) { return '<img src="' + src + '" alt="" />'; }).join("") +
-          '<span class="count">40+</span></button>' +
+          '<span class="count">' + (ids.length || 1) + '</span></button>' +
         (user.name ? '<div class="host">' +
           '<img class="av" src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" />' +
           '<div class="meta"><div class="nm">' + esc(user.name) + '</div><div class="hd">' + esc(user.handle || "") + "</div></div>" +
-          (following(room.owner_id) ? "" : '<button class="plus" data-act="follow" data-id="' + room.owner_id + '"><img src="img/BadgePlus.png" alt="" /></button>') +
+          (mine || following(room.owner_id) ? "" : '<button class="plus" data-act="follow" data-id="' + room.owner_id + '"><img src="img/BadgePlus.png" alt="" /></button>') +
         "</div>" : "") +
         '<div class="live-chat"><div class="welcome">' + welcome + "</div>" + lines + "</div>" +
         '<div class="live-scrim"></div>' +
@@ -615,7 +773,7 @@
     return el(
       '<div class="form-page">' +
         '<div class="form-head">' +
-          '<img class="form-sky" src="img/AuthSky.png" alt="" />' +
+          '<img class="form-sky" src="img/FormSky.png" alt="" />' +
           '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           '<div class="form-title">Detail</div>' +
           (post ? '<button class="head-icon like" data-act="like" data-id="' + post.id + '"><img src="img/' + (state.likes.indexOf(post.id) >= 0 ? "LikeOnGlyph.svg" : "FollowGlyph.svg") + '" alt="" /></button>' : "") +
@@ -642,7 +800,7 @@
     return el(
       '<div class="form-page">' +
         '<div class="feed-head compose-head">' +
-          '<img class="form-sky" src="img/AuthSky.png" alt="" />' +
+          '<img class="form-sky" src="img/FormSky.png" alt="" />' +
           '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           '<div class="form-title">Create post</div>' +
           '<div class="post-pills compose-pills">' +
@@ -683,7 +841,7 @@
     return el(
       '<div class="form-page">' +
         '<div class="form-head">' +
-          '<img class="form-sky" src="img/AuthSky.png" alt="" />' +
+          '<img class="form-sky" src="img/FormSky.png" alt="" />' +
           '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           '<div class="form-title">' + esc(user.name || "Chat") + "</div>" +
           (user.name ? '<div class="head-host">' +
@@ -769,8 +927,8 @@
     var id = state.profile || API.me();
     var user = state.profiles[id] || state.me || {};
     var mine = id && id === API.me();
-    var face = user.avatar_url || "";
-    var coverURL = user.cover_url || "img/AuthSky.png";
+    var face = user.avatar_url || remembered("avatar", id) || fileURL(id, "avatar.jpg");
+    var coverURL = user.cover_url || remembered("cover", id) || fileURL(id, "cover.jpg") || "img/AuthSky.png";
     var posts = state.posts.filter(function (row) {
       if (state.profileTab === "like") return state.likes.indexOf(row.id) >= 0;
       return row.author_id === id;
@@ -780,7 +938,7 @@
     return el(
       '<div class="form-page">' +
         '<div class="prof-head">' +
-          '<img class="prof-cover" src="' + esc(coverURL) + '" alt="" />' +
+          '<img class="prof-cover" src="' + esc(coverURL) + '" alt="" data-fallback="img/AuthSky.png" />' +
           '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           (mine
             ? '<button class="head-icon more" data-act="go" data-to="settings"><img src="img/SettingsIcon.svg" alt="" /></button>'
@@ -788,10 +946,10 @@
           '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
           '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
           '<div class="prof-av">' +
-            (face ? '<img class="face" src="' + esc(face) + '" alt="" />' : "") +
+            (face ? '<img class="face" src="' + esc(face) + '" alt="" data-fallback="" />' : "") +
             '<img class="frame" src="img/AvatarFrame.png" alt="" />' +
             (mine
-              ? '<button class="edit" data-act="go" data-to="edit"><img src="img/EditBadge.svg" alt="" /></button>'
+              ? '<button class="edit" data-act="go" data-to="edit"><img src="img/ProfileEdit.svg" alt="" /></button>'
               : (id && !following(id) ? '<button class="edit plus" data-act="follow" data-id="' + esc(id) + '"><img src="img/BadgePlus.png" alt="" /></button>' : "")) +
           "</div>" +
         "</div>" +
@@ -801,7 +959,7 @@
             '<div class="prof-handle">' + esc(user.handle || "") + "</div>" +
             (user.name
               ? (mine
-                ? '<button class="shop-chip" data-act="go" data-to="shop"><img src="img/CoinBadge.png" alt="" /><span>Coin Shop</span></button>'
+                ? '<button class="shop-chip" data-act="go" data-to="shop"><span class="coin"><img src="img/CoinShopBadge.png" alt="" /></span><span>Coin Shop</span></button>'
                 : '<button class="shop-chip chat" data-act="open-chat" data-id="' + esc(id || "") + '"><img src="img/ChatNow.png" alt="" /><span>Chat Now</span></button>')
               : "") +
           "</div>" +
@@ -811,8 +969,8 @@
             '<button data-act="people" data-id="block"><b>' + (mine ? state.blocks.length : 0) + "</b><span>Blacklist</span></button>" +
           "</div>" +
           '<div class="post-pills prof-pills">' +
-            '<button class="pill pink' + (state.profileTab === "post" ? " on" : "") + '" data-act="profile-tab" data-id="post">Post</button>' +
-            '<button class="pill gray' + (state.profileTab === "like" ? " on" : "") + '" data-act="profile-tab" data-id="like">Like</button>' +
+            '<button class="pill pink' + (state.profileTab === "post" ? " on" : "") + '" data-act="profile-tab" data-id="post"><img class="flake" src="img/SnowmanBody.svg" alt="" /><span>Post</span><img class="man" src="img/PillSnowman.svg" alt="" /></button>' +
+            '<button class="pill gray' + (state.profileTab === "like" ? " on" : "") + '" data-act="profile-tab" data-id="like"><img class="flake" src="img/SnowmanBody.svg" alt="" /><span>Like</span><img class="man" src="img/PillSnowman.svg" alt="" /></button>' +
           "</div>" +
           (cards || empty) +
         "</div></div>"
@@ -849,7 +1007,6 @@
   }
 
   function shopView() {
-    var gems = (state.me && (state.me.gems || state.me.coins)) || 0;
     var arts = ["Coin5.png", "Coin10.png", "Coin15.png", "Coin20.png", "Coin25.png", "Coin30.png", "Coin35.png"];
     var packs = (Bridge.env().packs || []).map(function (pack, i) {
       return '<button class="pack' + (i === 0 ? " on" : "") + '" data-act="buy" data-id="' + esc(pack.id) + '">' +
@@ -860,10 +1017,9 @@
     return el(
       '<div class="form-page shop-page">' +
         '<div class="shop-head">' +
-          '<img class="banner" src="img/CoinShop.png" alt="" />' +
+          '<img class="banner" src="img/CoinBanner.png" alt="" />' +
           '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           '<div class="form-title">Coin Shop</div>' +
-          '<button class="gem-chip"><img src="img/Coin5.png" alt="" /><span>' + gems + '</span><img class="plus" src="img/CoinPlus.svg" alt="" /></button>' +
           '<img class="form-snow" src="img/SnowEdge.png" alt="" />' +
           '<img class="form-sled" src="img/AuthSled.png" alt="" />' +
         "</div>" +
@@ -873,16 +1029,16 @@
 
   function editView() {
     var name = (state.me && state.me.name) || "";
-    var face = state.avatarPick || (state.me && state.me.avatar_url) || "";
-    var coverURL = state.coverPick || (state.me && state.me.cover_url) || "";
+    var face = state.avatarPick || (state.me && state.me.avatar_url) || remembered("avatar", API.me()) || fileURL(API.me(), "avatar.jpg");
+    var coverURL = state.coverPick || (state.me && state.me.cover_url) || remembered("cover", API.me());
     var frames = ["AvatarFrame.png", "FrameSnow.png", "FrameSki.png", "FrameSnowman.png", "FrameCable.png", "FrameTrophy.png"];
     var frameCells = frames.map(function (src, i) {
       return '<button class="frame-cell' + (state.framePick === i ? " on" : "") + '" type="button" data-act="pick-frame" data-id="' + i + '">' +
         '<img src="img/' + src + '" alt="" /></button>';
     }).join("");
-    var avatar = face ? '<img src="' + esc(face) + '" alt="" />' : '<img class="cloud" src="img/UploadCloud.svg" alt="" />';
+    var avatar = face ? '<img src="' + esc(face) + '" alt="" data-fallback="img/UploadCloud.svg" />' : '<img class="cloud" src="img/UploadCloud.svg" alt="" />';
     var bg = coverURL
-      ? '<img class="photo" src="' + esc(coverURL) + '" alt="" />'
+      ? '<img class="photo" src="' + esc(coverURL) + '" alt="" data-fallback="img/UploadCloud.svg" />'
       : '<img class="cloud" src="img/UploadCloud.svg" alt="" /><span>Upload Photo</span>';
     return el(
       '<div class="form-page edit">' + formChrome("Edit Profile", "profile") +
@@ -995,7 +1151,7 @@
       wrap.className = "dim soft";
       inner = giftShopHTML();
     }
-    var box = el("<div></div>");
+    var box = el('<div class="sheet-layer"></div>');
     box.appendChild(wrap);
     if (inner) box.appendChild(el(inner));
     return box;
@@ -1010,38 +1166,36 @@
         '<img src="img/' + id + '.png" alt="" /><span><img src="img/Coin5.png" alt="" />' + cost + "</span></button>";
     }).join("");
     return '<div class="gift-shop">' +
-      '<img class="cap" src="img/SnowCap.png" alt="" />' +
+      '<div class="sheet-snow"><img src="img/SheetSnow.png" alt="" /></div>' +
+      '<div class="sheet-body">' +
       '<div class="gift-top">' +
-        '<button class="gem-chip static"><img src="img/Coin5.png" alt="" /><span>' + gems + '</span><img class="plus" src="img/CoinPlus.svg" alt="" /></button>' +
+        '<button class="gem-chip static" data-act="go" data-to="shop"><img src="img/Coin5.png" alt="" /><span>' + gems + '</span><img class="plus" src="img/CoinPlus.svg" alt="" /></button>' +
         '<div class="title">Gift Shop</div>' +
         '<button class="x" data-act="close-sheet"><img src="img/CloseBadge.svg" alt="" /></button>' +
       "</div>" +
       '<div class="gift-grid">' + cells + "</div>" +
       '<button class="snow-btn send" data-act="send-gift" data-id="' + state.giftPick + '" data-cost="' + (costs[giftIndex(state.giftPick)] || 10) + '">' +
         '<img src="img/ButtonBlue.svg" alt="" /><span>Send</span></button>' +
-    "</div>";
+      "</div></div>";
   }
 
   function snowSheet(title, inner) {
     return '<div class="snow-sheet">' +
-      '<img class="cap" src="img/SnowCap.png" alt="" />' +
+      '<div class="sheet-snow"><img src="img/SheetSnow.png" alt="" /></div>' +
+      '<div class="sheet-body">' +
       '<div class="snow-top"><span class="x-ph"></span><div class="title">' + title + '</div>' +
       '<button class="x" data-act="close-sheet"><img src="img/CloseBadge.svg" alt="" /></button></div>' +
-      inner + "</div>";
+      inner + "</div></div>";
   }
 
   function audienceRows() {
-    var seen = {};
-    var ids = [];
-    (state.roomLines || []).forEach(function (line) {
-      if (line.sender_id && !seen[line.sender_id]) { seen[line.sender_id] = 1; ids.push(line.sender_id); }
-    });
+    var ids = audienceIds();
     var rows = ids.map(function (id) {
       var user = state.profiles[id] || {};
       var followed = following(id);
       return '<div class="people-row"><img src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" />' +
         '<div class="meta"><b>' + esc(user.name || "") + "</b><span>" + esc(user.handle || "") + "</span></div>" +
-        (followed
+        (id === API.me() ? "" : followed
           ? '<button class="pill-act gray" data-act="follow" data-id="' + id + '">Followed</button>'
           : '<button class="pill-act blue" data-act="follow" data-id="' + id + '">Follow<img src="img/BadgePlus.png" alt="" /></button>') +
         "</div>";
@@ -1081,7 +1235,10 @@
       }
       else if (act === "live") {
         await API.joinRoom(id).catch(function () {});
-        state.roomLines = await API.roomMessages(id);
+        state.roomLines = takeLines(await API.roomMessages(id));
+        state.roomSig = lineSig(state.roomLines);
+        state.audience = await API.roomMembers(id).catch(function () { return []; });
+        state.liveTime = 0;
         go("live", { live: id });
       }
       else if (act === "like") {
@@ -1105,16 +1262,41 @@
       else if (act === "pick-gift") { state.giftPick = id; draw(); }
       else if (act === "pick") {
         var media = await Bridge.pick(state.composeKind === "video" ? 1 : 9, state.composeKind === "video");
-        state.picked = (media.items || (media.payload && media.payload.items) || []) || [];
+        state.picked = pickedItems(media);
         draw();
       }
-      else if (act === "pick-avatar") { var one = await Bridge.pick(1, false); state.avatarPick = pickedURI(one); draw(); }
-      else if (act === "pick-cover") { var two = await Bridge.pick(1, false); state.coverPick = pickedURI(two); draw(); }
+      else if (act === "pick-avatar") {
+        var avatarMedia = await Bridge.pick(1, false);
+        var one = pickedItems(avatarMedia)[0] || {};
+        if (one.uri) { state.avatarPick = one.uri; state.avatarPickId = one.id || ""; }
+        else if (avatarMedia && avatarMedia.message) Bridge.toast(plainError(avatarMedia.message));
+        draw();
+      }
+      else if (act === "pick-cover") {
+        var coverMedia = await Bridge.pick(1, false);
+        var two = pickedItems(coverMedia)[0] || {};
+        if (two.uri) { state.coverPick = two.uri; state.coverPickId = two.id || ""; }
+        else if (coverMedia && coverMedia.message) Bridge.toast(plainError(coverMedia.message));
+        draw();
+      }
       else if (act === "gift") { state.sheet = "gift"; draw(); }
       else if (act === "send-gift") {
-        state.gift = id; state.sheet = null; draw();
-        API.sendGift(state.live, Number(node.getAttribute("data-cost")), id).catch(function (err) { Bridge.toast(err.message || String(err)); });
-        setTimeout(function () { state.gift = ""; draw(); }, 1800);
+        var cost = Number(node.getAttribute("data-cost")) || 0;
+        if (((state.me && state.me.gems) || 0) < cost) {
+          Bridge.toast("Not enough coins.");
+          go("shop");
+          return;
+        }
+        state.sheet = null;
+        await API.joinRoom(state.live).catch(function () {});
+        var left = await API.sendGift(state.live, cost, id);
+        if (state.me && typeof left === "number") state.me.gems = left;
+        await API.sendRoomMessage(state.live, "sent a gift");
+        state.roomLines = takeLines(await API.roomMessages(state.live));
+        state.roomSig = lineSig(state.roomLines);
+        state.gift = id;
+        draw();
+        setTimeout(function () { state.gift = ""; if (state.route === "live") draw(); }, 1800);
       }
       else if (act === "about-post") openAbout("post", id);
       else if (act === "about-chat") openAbout("chat", id);
@@ -1142,7 +1324,11 @@
       }
       else if (act === "report") { state.sheet = "report"; draw(); }
       else if (act === "feedback") { state.sheet = "feedback"; draw(); }
-      else if (act === "audience") { state.sheet = "audience"; draw(); }
+      else if (act === "audience") {
+        if (state.live) state.audience = await API.roomMembers(state.live).catch(function () { return state.audience; });
+        state.sheet = "audience";
+        draw();
+      }
       else if (act === "pick-frame") { state.framePick = Number(id); draw(); }
       else if (act === "confirm-logout") { stack = []; await Bridge.signOut(); go("auth"); }
       else if (act === "confirm-erase") { stack = []; await API.deleteAccount(); await Bridge.signOut(); go("auth"); }
@@ -1267,13 +1453,13 @@
       } else if (kind === "register2") {
         await Bridge.eula();
         await API.signUp(state.form.email, state.form.password, state.form.name);
+        if (!API.tokens().access) throw new Error("Sign in failed");
         await Bridge.setSession(API.tokens().access, API.tokens().refresh);
-        var avatar = null;
-        var coverURL = null;
-        if (state.avatarPick) avatar = await API.upload(API.me() + "/avatar.jpg", state.avatarPick, "image/jpeg");
-        if (state.coverPick) coverURL = await API.upload(API.me() + "/cover.jpg", state.coverPick, "image/jpeg");
-        await API.saveProfile(state.form.name, avatar, coverURL);
-        await reload();
+        var avatar = state.avatarPickId || state.avatarPick ? rememberMedia("avatar", await uploadPick({ id: state.avatarPickId, uri: state.avatarPick }, API.me() + "/avatar.jpg")) : "";
+        var coverURL = state.coverPickId || state.coverPick ? rememberMedia("cover", await uploadPick({ id: state.coverPickId, uri: state.coverPick }, API.me() + "/cover.jpg")) : "";
+        try { await API.saveProfile(state.form.name, avatar, coverURL); } catch (err) {}
+        state.avatarPick = ""; state.avatarPickId = ""; state.coverPick = ""; state.coverPickId = "";
+        try { await reload(); } catch (err) {}
         stack = [];
         go("main");
       } else if (kind === "comment") {
@@ -1290,8 +1476,10 @@
         await reload();
       } else if (kind === "live") {
         if (!body) return;
+        await API.joinRoom(state.live).catch(function () {});
         await API.sendRoomMessage(state.live, body);
-        state.roomLines = await API.roomMessages(state.live);
+        state.roomLines = takeLines(await API.roomMessages(state.live));
+        state.roomSig = lineSig(state.roomLines);
         draw();
       } else if (kind === "ai") { await sendAI(body); }
       else if (kind === "tag") {
@@ -1304,7 +1492,7 @@
         if (!items.length) { Bridge.toast("Please enter..."); return; }
         var urls = [];
         for (var i = 0; i < items.length; i++) {
-          urls.push(await API.upload("yoohoo/posts/" + Date.now() + "-" + i + ".jpg", items[i].uri, items[i].mime || "image/jpeg"));
+          urls.push(await uploadPick(items[i], API.me() + "/posts/" + Date.now() + "-" + i + ".jpg"));
         }
         var caption = body;
         (state.tags || []).forEach(function (tag) { caption += (caption ? " " : "") + "#" + tag; });
@@ -1317,11 +1505,12 @@
         state.tab = "post";
         go("main");
       } else if (kind === "edit") {
-        var avatar = state.me.avatar_url;
-        var coverURL = state.me.cover_url;
-        if (state.avatarPick) avatar = await API.upload("yoohoo/profiles/" + API.me() + "-avatar.jpg", state.avatarPick, "image/jpeg");
-        if (state.coverPick) coverURL = await API.upload("yoohoo/profiles/" + API.me() + "-cover.jpg", state.coverPick, "image/jpeg");
-        await API.saveProfile(String(data.get("name") || state.me.name), avatar, coverURL);
+        var avatar = (state.me && state.me.avatar_url) || remembered("avatar", API.me());
+        var coverURL = (state.me && state.me.cover_url) || remembered("cover", API.me());
+        if (state.avatarPickId || state.avatarPick) avatar = rememberMedia("avatar", await uploadPick({ id: state.avatarPickId, uri: state.avatarPick }, API.me() + "/avatar.jpg"));
+        if (state.coverPickId || state.coverPick) coverURL = rememberMedia("cover", await uploadPick({ id: state.coverPickId, uri: state.coverPick }, API.me() + "/cover.jpg"));
+        try { await API.saveProfile(String(data.get("name") || state.me.name), avatar, coverURL); } catch (err) {}
+        state.avatarPick = ""; state.avatarPickId = ""; state.coverPick = ""; state.coverPickId = "";
         await reload();
         Bridge.toast("Saved.");
         go("profile", { profile: API.me() });
@@ -1378,13 +1567,45 @@
       if (state.route === "live" && state.live) {
         API.roomMessages(state.live).then(function (rows) {
           if (state.route !== "live") return;
-          state.roomLines = rows || [];
+          var next = lineSig(rows);
+          if (next === state.roomSig) return;
+          state.roomSig = next;
+          state.roomLines = takeLines(rows);
           draw();
         }).catch(function () {});
       } else if (state.route === "chat" && state.chat) {
         reload().catch(function () {});
       }
     }, 4000);
+  }
+
+  function lineSig(rows) {
+    return (rows || []).map(function (row) { return row.id; }).join();
+  }
+
+  function takeLines(rows) {
+    return (rows || []).map(function (row) {
+      row.sender_id = String(row.sender_id || "").toLowerCase();
+      return row;
+    });
+  }
+
+  function startLive() {
+    var video = document.querySelector(".live-room video.stage");
+    if (!video) return;
+    video.muted = true;
+    video.defaultMuted = true;
+    video.loop = true;
+    var stamp = state.liveTime || 0;
+    function resume() {
+      if (stamp > 0.2) {
+        try { video.currentTime = stamp; } catch (err) {}
+      }
+      var play = video.play();
+      if (play && play.catch) play.catch(function () {});
+    }
+    if (video.readyState >= 1) resume();
+    else video.addEventListener("loadedmetadata", resume);
   }
 
   function startCamera() {

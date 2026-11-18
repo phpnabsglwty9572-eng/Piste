@@ -39,6 +39,7 @@
     apple: function () { return post("appleSignIn"); },
     buy: function (productId) { return post("buy", { productId: productId }); },
     pick: function (max, video) { return post("pickMedia", { max: max || 1, video: !!video }); },
+    upload: function (pick, path) { return post("uploadMedia", { pick: pick, path: path }); },
     eula: function () { return post("ensureEULA"); },
     eulaText: function () { return post("eulaText"); },
     legal: function (kind) { return post("openLegal", { kind: kind }); },

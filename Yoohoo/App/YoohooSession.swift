@@ -54,6 +54,7 @@ final class YoohooSession: ObservableObject {
     @Published var coins = 0
     @Published var coverAsset = ""
     @Published var avatarAsset = ""
+    @Published var h5Ready = false
 
     private let eulaKey = "yoohoo.eula"
     private let appleNamePrefix = "yoohoo.appleName."

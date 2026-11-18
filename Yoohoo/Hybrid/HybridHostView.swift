@@ -31,6 +31,8 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
     private var h5View: WKWebView?
     private var paths: HotPaths?
     private var pendingPick: (max: Int, video: Bool, id: String)?
+    private var pickedBlobs: [String: Data] = [:]
+    private var pickSerial = 0
     private let ringer = CallRinger()
 
     override func viewDidLoad() {
@@ -52,6 +54,11 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardFrame(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardFrame(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
         Task { await boot() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) { [weak self] in
+            Task { @MainActor in
+                self?.session?.h5Ready = true
+            }
+        }
     }
 
     deinit {
@@ -134,6 +141,9 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         case "ready":
             await pushSession()
             reply(id, ["ok": true])
+        case "settled":
+            session?.h5Ready = true
+            reply(id, ["ok": true])
         case "mountH5":
             mountH5()
         case "ensureEULA":
@@ -158,6 +168,8 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
             await buy(id, product: payload["productId"] as? String ?? "")
         case "pickMedia":
             pick(id: id, max: payload["max"] as? Int ?? 1, video: payload["video"] as? Bool ?? false)
+        case "uploadMedia":
+            await uploadPicked(id: id, pick: payload["pick"] as? String ?? "", path: payload["path"] as? String ?? "")
         case "openLegal":
             openLegal(payload["kind"] as? String ?? "terms")
             reply(id, ["ok": true])
@@ -294,23 +306,99 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
                     if let url = try? await loadFile(result, type: UTType.movie.identifier) {
                         items.append(["uri": url.absoluteString, "mime": "video/mp4"])
                     }
-                } else if let data = try? await loadData(result), let encoded = data.base64EncodedString() as String? {
-                    items.append(["uri": "data:image/jpeg;base64,\(encoded)", "mime": "image/jpeg"])
+                } else if let data = try? await loadData(result) {
+                    pickSerial += 1
+                    let pickID = "pick-\(pickSerial)"
+                    pickedBlobs[pickID] = data
+                    if pickedBlobs.count > 12, let oldest = pickedBlobs.keys.sorted().first {
+                        pickedBlobs.removeValue(forKey: oldest)
+                    }
+                    let preview = UIImage(data: data).flatMap { jpegLimited($0, maxSide: 480, quality: 0.62) } ?? data
+                    items.append([
+                        "id": pickID,
+                        "uri": "data:image/jpeg;base64,\(preview.base64EncodedString())",
+                        "mime": "image/jpeg"
+                    ])
                 }
             }
-            reply(request.id, ["items": items])
+            if results.isEmpty == false && items.isEmpty {
+                reply(request.id, ["items": items, "message": "Could not read that photo."])
+            } else {
+                reply(request.id, ["items": items])
+            }
         }
     }
 
     private func loadData(_ result: PHPickerResult) async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
-            result.itemProvider.loadObject(ofClass: UIImage.self) { object, error in
-                if let image = object as? UIImage, let data = image.jpegData(compressionQuality: 0.82) {
-                    continuation.resume(returning: data)
-                } else {
-                    continuation.resume(throwing: error ?? URLError(.cannotDecodeContentData))
+        let provider = result.itemProvider
+        let type = UTType.image.identifier
+        let raw: Data = try await withCheckedThrowingContinuation { continuation in
+            if provider.hasItemConformingToTypeIdentifier(type) {
+                provider.loadDataRepresentation(forTypeIdentifier: type) { data, error in
+                    if let data {
+                        continuation.resume(returning: data)
+                    } else {
+                        continuation.resume(throwing: error ?? URLError(.cannotDecodeContentData))
+                    }
+                }
+            } else {
+                provider.loadObject(ofClass: UIImage.self) { object, error in
+                    if let image = object as? UIImage, let data = image.jpegData(compressionQuality: 0.82) {
+                        continuation.resume(returning: data)
+                    } else {
+                        continuation.resume(throwing: error ?? URLError(.cannotDecodeContentData))
+                    }
                 }
             }
+        }
+        guard let image = UIImage(data: raw) else { throw URLError(.cannotDecodeContentData) }
+        return jpegLimited(image, maxSide: 1280, quality: 0.74)
+    }
+
+    private func jpegLimited(_ image: UIImage, maxSide: CGFloat, quality: CGFloat) -> Data {
+        let size = image.size
+        let longest = max(size.width, size.height)
+        let scale = longest > maxSide ? maxSide / longest : 1
+        let target = CGSize(width: max(1, floor(size.width * scale)), height: max(1, floor(size.height * scale)))
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let rendered = UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))
+        }
+        return rendered.jpegData(compressionQuality: quality) ?? Data()
+    }
+
+    private func uploadPicked(id: String, pick: String, path: String) async {
+        guard let data = pickedBlobs[pick], data.isEmpty == false else {
+            reply(id, ["ok": false, "message": "Choose a photo again."])
+            return
+        }
+        guard let token = await YoohooBackend.accessToken(),
+              let uid = YoohooBackend.userID?.uuidString.lowercased(),
+              path.hasPrefix(uid + "/"),
+              let endpoint = URL(string: YoohooConfig.supabaseURL + "/storage/v1/object/media/" + path)
+        else {
+            reply(id, ["ok": false, "message": "Could not upload the photo."])
+            return
+        }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue(YoohooConfig.supabaseKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        request.setValue("true", forHTTPHeaderField: "x-upsert")
+        request.httpBody = data
+        do {
+            let (body, response) = try await URLSession.shared.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(code) else {
+                let text = String(data: body, encoding: .utf8) ?? "Could not upload the photo."
+                reply(id, ["ok": false, "message": text])
+                return
+            }
+            reply(id, ["ok": true, "url": YoohooConfig.supabaseURL + "/storage/v1/object/public/media/" + path])
+        } catch {
+            reply(id, ["ok": false, "message": error.localizedDescription])
         }
     }
 

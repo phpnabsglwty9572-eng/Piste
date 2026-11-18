@@ -40,9 +40,11 @@
 
   function saveTokens(session) {
     if (!session) return;
-    tokens.access = session.access_token || session.accessToken || tokens.access;
-    tokens.refresh = session.refresh_token || session.refreshToken || tokens.refresh;
-    if (session.user && session.user.id) me = session.user.id;
+    var bag = session.access_token || session.accessToken ? session : (session.session || session);
+    tokens.access = bag.access_token || bag.accessToken || tokens.access;
+    tokens.refresh = bag.refresh_token || bag.refreshToken || tokens.refresh;
+    var user = bag.user || session.user;
+    if (user && user.id) me = String(user.id).toLowerCase();
   }
 
   global.API = {
@@ -112,7 +114,10 @@
       });
     },
     saveProfile: function (name, avatar, cover) {
-      return rest("/profiles?id=eq." + me, "PATCH", { name: name, avatar_url: avatar, cover_url: cover });
+      var row = { name: name };
+      if (avatar) row.avatar_url = avatar;
+      if (cover) row.cover_url = cover;
+      return rest("/profiles?id=eq." + me, "PATCH", row);
     },
     openThread: async function (other) {
       try {
@@ -138,6 +143,7 @@
     },
     feedback: function (body) { return rest("/feedback", "POST", { user_id: me, body: body }); },
     joinRoom: function (room) { return rest("/room_members", "POST", { room_id: room, user_id: me }); },
+    roomMembers: function (room) { return rest("/room_members?room_id=eq." + room); },
     roomMessages: function (room) { return rest("/room_messages?room_id=eq." + room + "&order=created_at.asc"); },
     sendRoomMessage: function (room, body) {
       return rest("/room_messages", "POST", { room_id: room, sender_id: me, body: body });
@@ -148,22 +154,38 @@
     addAI: function (mineFlag, body) { return rest("/ai_messages", "POST", { user_id: me, mine: mineFlag, body: body }); },
     deleteAccount: function () { return rpc("delete_own_account"); },
     upload: async function (path, dataUrl, type) {
-      var raw = dataUrl.split(",")[1] || "";
-      var bin = atob(raw);
-      var bytes = new Uint8Array(bin.length);
-      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      var blob = await fileBlob(dataUrl, type);
+      var headers = {
+        apikey: key(),
+        Authorization: "Bearer " + tokens.access,
+        "Content-Type": type || blob.type || "image/jpeg",
+        "x-upsert": "true",
+        "cache-control": "60"
+      };
       var res = await fetch(url() + "/storage/v1/object/media/" + path, {
         method: "POST",
-        headers: {
-          apikey: key(),
-          Authorization: "Bearer " + tokens.access,
-          "Content-Type": type || "image/jpeg",
-          "x-upsert": "true"
-        },
-        body: bytes
+        headers: headers,
+        body: blob
       });
       if (!res.ok) throw new Error(await res.text());
       return url() + "/storage/v1/object/public/media/" + path;
     }
   };
+
+  async function fileBlob(dataUrl, type) {
+    if (typeof dataUrl === "string" && dataUrl.indexOf("data:") === 0) {
+      var raw = dataUrl.split(",")[1] || "";
+      if (!raw) throw new Error("Empty image");
+      var bin = atob(raw);
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new Blob([bytes], { type: type || "image/jpeg" });
+    }
+    if (typeof dataUrl === "string" && dataUrl) {
+      var fetched = await fetch(dataUrl);
+      if (!fetched.ok) throw new Error("Empty image");
+      return fetched.blob();
+    }
+    throw new Error("Empty image");
+  }
 })(window);

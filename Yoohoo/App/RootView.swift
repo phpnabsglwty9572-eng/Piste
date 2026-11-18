@@ -6,12 +6,10 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            switch nav.stage {
-            case .splash:
+            HybridHostView()
+                .ignoresSafeArea()
+            if session.h5Ready == false {
                 SplashView()
-            case .hybrid:
-                HybridHostView()
-                    .ignoresSafeArea()
             }
             if session.busy, session.blocksInput {
                 Color.clear

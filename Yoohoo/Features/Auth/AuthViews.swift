@@ -6,24 +6,21 @@ struct SplashView: View {
 
     var body: some View {
         GeometryReader { geo in
-            ZStack(alignment: .top) {
-                AuthSkyFill()
+            let board = min(667, geo.size.height)
+            let boardTop = (geo.size.height - board) / 2
+            ZStack {
+                Color(red: 0.847, green: 0.941, blue: 0.988)
+                Color.clear
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .overlay(AuthSkyFill())
+                    .clipped()
                 AuthLogoMark()
-                    .padding(.top, 244)
-                    .frame(width: geo.size.width, alignment: .center)
+                    .position(x: geo.size.width / 2, y: boardTop + 244 + 32.5)
             }
-            .frame(width: geo.size.width, height: geo.size.height)
         }
         .ignoresSafeArea()
         .navigationBarHidden(true)
-        .onAppear {
-            Task {
-                async let restored: Void = session.restore()
-                try? await Task.sleep(nanoseconds: 700_000_000)
-                nav.enterHybrid()
-                _ = await restored
-            }
-        }
+        .allowsHitTesting(false)
     }
 }
 
