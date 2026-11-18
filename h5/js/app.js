@@ -997,7 +997,11 @@
       : (post.is_video
         ? '<video class="stage" src="' + esc(photo) + '" muted playsinline preload="metadata" poster="' + esc(poster) + '" data-act="open-post" data-id="' + post.id + '"></video>'
         : '<img class="stage" src="' + esc(photo) + '" alt="" data-act="preview" data-id="' + post.id + '" />');
-    return '<article class="live-card post-card">' +
+    var actions = onDetail ? "" :
+      '<button class="icon34" data-act="like" data-id="' + post.id + '"><img src="img/' + (liked ? "LikeOnGlyph.svg" : "LikeGlyph.svg") + '" alt="" /></button>' +
+      '<button class="icon34" data-act="open-post" data-id="' + post.id + '"><img src="img/CommentGlyph.svg" alt="" /></button>' +
+      '<button class="icon34" data-act="about-post" data-id="' + post.id + '"><img src="img/MoreCircle.svg" alt="" /></button>';
+    return '<article class="live-card post-card' + (onDetail ? " detail-card" : "") + '">' +
       '<div class="live-photo tall">' +
         stage +
         (post.is_video ? '<button class="play" data-act="play-video" data-id="' + post.id + '"><img src="img/PlayButton.svg" alt="" /></button>' : "") +
@@ -1007,9 +1011,7 @@
             '<div class="meta"><div class="nm">' + esc(user.name || "") + '</div><div class="hd">' + esc(user.handle || "") + "</div></div>" +
             (followed ? "" : '<button class="plus" data-act="follow" data-id="' + post.author_id + '"><img src="img/BadgePlus.png" alt="" /></button>') +
           "</div>" +
-          '<button class="icon34" data-act="like" data-id="' + post.id + '"><img src="img/' + (liked ? "LikeOnGlyph.svg" : "LikeGlyph.svg") + '" alt="" /></button>' +
-          '<button class="icon34" data-act="open-post" data-id="' + post.id + '"><img src="img/CommentGlyph.svg" alt="" /></button>' +
-          '<button class="icon34" data-act="about-post" data-id="' + post.id + '"><img src="img/MoreCircle.svg" alt="" /></button>' +
+          actions +
         "</div></div>" +
       '<div class="caption">' + esc(split.caption) + "</div>" +
       '<div class="tags">' + split.tags.map(function (tag) { return '<span class="tag">' + esc(tag) + "</span>"; }).join("") +
