@@ -29,12 +29,13 @@
     pending: [],
     ai: [],
     aiBy: {},
-    aiId: "ai:pegu",
+    aiId: "957ee1b2-1f84-450c-9853-12ad290b1f56",
     form: { email: "", password: "", name: "" },
     composeKind: "image",
     giftPick: "Gift01",
     profileTab: "post",
     framePick: -1,
+    shopPick: 0,
     tags: [],
     draft: "",
     reportTarget: "",
@@ -46,9 +47,9 @@
 
   var AI_ROLES = [
     {
-      id: "ai:pegu",
+      id: "957ee1b2-1f84-450c-9853-12ad290b1f56",
       name: "Pegu",
-      handle: "@pegu",
+      handle: "@pegu.skier",
       avatar: "img/Penguin.png",
       preview: "Did you go skiing this weekend?",
       title: "Glide into winter with Pegu",
@@ -61,9 +62,9 @@
       reply: "No. You can rent large items such as skis, ski boots and ski poles at the resort. Only buy personal and safety items like a helmet, goggles and base layers."
     },
     {
-      id: "ai:yoohoo",
+      id: "d584bdef-394d-441e-86b0-ab252deb058d",
       name: "Yoohoo",
-      handle: "@yoohoo",
+      handle: "@yoohoo.mascot",
       avatar: "img/AuthLogo.png",
       preview: "Yoohoo!",
       title: "Yoohoo!",
@@ -285,6 +286,13 @@
       row.id = String(row.id || "").toLowerCase();
       map[row.id] = row;
     });
+    AI_ROLES.forEach(function (role) {
+      var row = map[role.id] || { id: role.id, name: role.name, handle: role.handle.replace(/^@/, ""), gems: 0 };
+      if (!row.avatar_url) row.avatar_url = role.avatar;
+      if (!row.name) row.name = role.name;
+      if (!row.handle) row.handle = role.handle.replace(/^@/, "");
+      map[role.id] = row;
+    });
     var ids = Object.keys(map);
     state.profiles = map;
     state.me = map[API.me()] || state.me;
@@ -320,6 +328,7 @@
     state.likes = state.likes.map(function (id) { return String(id).toLowerCase(); });
     state.posts = posts.filter(function (row) { return !blocked(row.author_id); });
     state.rooms = rooms.filter(function (row) { return !blocked(row.owner_id); });
+    ensureCatalog();
     state.comments = comments.filter(function (row) { return !blocked(row.author_id); });
     state.threads = {};
     state.people = [];
@@ -331,10 +340,11 @@
       try {
         server = (await API.aiLines() || []).map(function (row) { return { mine: row.mine, body: row.body }; });
       } catch (err) { server = []; }
-      state.aiBy = {
-        "ai:pegu": saved["ai:pegu"] || server,
-        "ai:yoohoo": saved["ai:yoohoo"] || []
-      };
+      state.aiBy = {};
+      AI_ROLES.forEach(function (role, index) {
+        var legacy = index === 0 ? "ai:pegu" : "ai:yoohoo";
+        state.aiBy[role.id] = saved[role.id] || saved[legacy] || (index === 0 ? server : []);
+      });
       persistAI();
       if (state.aiId) state.ai = aiLines(state.aiId);
     }
@@ -519,6 +529,11 @@
     document.documentElement.style.setProperty("--kb", (state.kb || 0) + "px");
     var previous = root.querySelector(":scope > .page");
     var hadSheet = !!root.querySelector(":scope > .sheet-layer");
+    var keptScroll = 0;
+    if (previous && kind === "replace") {
+      var oldScroll = previous.querySelector(".scroll");
+      if (oldScroll) keptScroll = oldScroll.scrollTop;
+    }
     var next = pageView();
     next.classList.add("page");
     if (!previous || kind === "replace") {
@@ -535,6 +550,10 @@
       } else if (kind === "fade") {
         next.classList.add("motion", "fade");
         root.appendChild(next);
+      } else if (kind === "tab-next" || kind === "tab-prev") {
+        next.classList.add("motion", kind === "tab-next" ? "tab-in" : "tab-in-left");
+        previous.classList.add("motion", kind === "tab-next" ? "tab-out" : "tab-out-right");
+        root.appendChild(next);
       } else {
         next.classList.add("motion", "push");
         previous.classList.add("motion", "under");
@@ -547,10 +566,23 @@
         if (event && kind === "pop" && event.target !== previous) return;
         finished = true;
         if (previous.parentNode) previous.remove();
-        next.classList.remove("motion", "push", "back", "fade");
+        next.classList.remove("motion", "push", "back", "fade", "tab-in", "tab-in-left");
       }
-      (kind === "pop" ? previous : next).addEventListener("animationend", finish);
+      var animated = kind === "pop" ? previous : next;
+      animated.addEventListener("animationend", finish);
       setTimeout(function () { finish(); }, 460);
+    }
+    if (keptScroll) {
+      var scroller = next.querySelector(".scroll");
+      if (scroller) scroller.scrollTop = keptScroll;
+    }
+    var shopFrame = next.querySelector(".shop-frame");
+    var shopOn = next.querySelector(".pack.on");
+    if (shopFrame && shopOn) {
+      shopFrame.style.transition = "none";
+      shopFrame.style.transform = "translate(" + shopOn.offsetLeft + "px," + shopOn.offsetTop + "px)";
+      shopFrame.getBoundingClientRect();
+      shopFrame.style.transition = "";
     }
     root.querySelectorAll(":scope > .sheet-layer, :scope > .preview").forEach(function (node) { node.remove(); });
     if (state.sheet) {
@@ -748,7 +780,7 @@
             '<div class="meta"><div class="nm">' + esc(user.name || "") + '</div><div class="hd">' + esc(user.handle || "") + "</div></div>" +
             (followed ? "" : '<button class="plus" data-act="follow" data-id="' + room.owner_id + '"><img src="img/BadgePlus.png" alt="" /></button>') +
           "</div>" +
-          '<button class="icon34" data-act="like-room" data-id="' + room.id + '"><img src="img/' + (loved ? "LikeOnGlyph.svg" : "FollowGlyph.svg") + '" alt="" /></button>' +
+          '<button class="icon34" data-act="like-room" data-id="' + room.id + '"><img src="img/' + (loved ? "LikeOnGlyph.svg" : "LikeGlyph.svg") + '" alt="" /></button>' +
           '<button class="icon34" data-act="about-person" data-id="' + room.owner_id + '"><img src="img/MoreGlyph.svg" alt="" /></button>' +
         "</div></div>" +
       '<div class="caption">' + esc(split.caption) + "</div>" +
@@ -879,10 +911,17 @@
     var photo = photos[0] || "img/LiveStage.png";
     var followed = following(post.author_id);
     var split = splitTags(post.body || "");
-    var liked = state.likes.indexOf(post.id) >= 0;
+    var liked = state.likes.indexOf(String(post.id).toLowerCase()) >= 0;
+    var onDetail = state.route === "post";
+    var poster = String(photo).replace(/\.mp4(\?.*)?$/, ".png$1");
+    var stage = post.is_video && onDetail
+      ? '<video class="stage" src="' + esc(photo) + '" autoplay muted loop playsinline data-act="preview" data-id="' + post.id + '"></video>'
+      : (post.is_video
+        ? '<video class="stage" src="' + esc(photo) + '" muted playsinline preload="metadata" poster="' + esc(poster) + '" data-act="open-post" data-id="' + post.id + '"></video>'
+        : '<img class="stage' + (photo.indexOf("http") === 0 ? " shine" : "") + '" src="' + esc(photo) + '" alt="" data-act="preview" data-id="' + post.id + '" onload="this.classList.remove(\'shine\')" />');
     return '<article class="live-card post-card">' +
       '<div class="live-photo tall">' +
-        '<img class="stage' + (photo.indexOf("http") === 0 ? " shine" : "") + '" src="' + esc(photo) + '" alt="" data-act="' + (state.route === "post" ? "preview" : "open-post") + '" data-id="' + post.id + '" onload="this.classList.remove(\'shine\')" />' +
+        stage +
         (post.is_video ? '<button class="play" data-act="play-video" data-id="' + post.id + '"><img src="img/PlayButton.svg" alt="" /></button>' : "") +
         '<div class="live-bar">' +
           '<div class="author">' +
@@ -890,7 +929,7 @@
             '<div class="meta"><div class="nm">' + esc(user.name || "") + '</div><div class="hd">' + esc(user.handle || "") + "</div></div>" +
             (followed ? "" : '<button class="plus" data-act="follow" data-id="' + post.author_id + '"><img src="img/BadgePlus.png" alt="" /></button>') +
           "</div>" +
-          '<button class="icon34" data-act="like" data-id="' + post.id + '"><img src="img/' + (liked ? "LikeOnGlyph.svg" : "FollowGlyph.svg") + '" alt="" /></button>' +
+          '<button class="icon34" data-act="like" data-id="' + post.id + '"><img src="img/' + (liked ? "LikeOnGlyph.svg" : "LikeGlyph.svg") + '" alt="" /></button>' +
           '<button class="icon34" data-act="open-post" data-id="' + post.id + '"><img src="img/CommentGlyph.svg" alt="" /></button>' +
           '<button class="icon34" data-act="about-post" data-id="' + post.id + '"><img src="img/MoreCircle.svg" alt="" /></button>' +
         "</div></div>" +
@@ -943,7 +982,7 @@
         '<img class="form-sky" src="img/FormSky.png" alt="" />' +
         '<button class="form-back" data-act="tab" data-id="home"><img src="img/BackButton.svg" alt="" /></button>' +
         '<div class="form-title">Chat</div>' +
-        '<button class="gem-chip" data-act="go" data-to="ai"><img src="img/Coin5.png" alt="" /><span>' + gems + '</span><img class="plus" src="img/CoinPlus.svg" alt="" /></button>' +
+        '<button class="gem-chip" data-act="go" data-to="shop"><img src="img/Coin5.png" alt="" /><span>' + gems + '</span><img class="plus" src="img/CoinPlus.svg" alt="" /></button>' +
         '<img class="form-snow" src="img/SnowHem.png" alt="" />' +
         '<img class="form-sled" src="img/SledMark.png" alt="" />' +
       "</div>" +
@@ -954,12 +993,47 @@
       "</div></div>";
   }
 
+  function liveClips() {
+    var root = (Bridge.env().supabaseURL || "").replace(/\/$/, "");
+    if (!root) return [];
+    return [1, 2, 3].map(function (n) {
+      return root + "/storage/v1/object/public/media/yoohoo/live/room-" + n + ".mp4";
+    });
+  }
+
+  function ensureCatalog() {
+    var clips = liveClips();
+    if (!clips.length) return;
+    clips.forEach(function (url, i) {
+      var id = "clip-" + (i + 1);
+      if (state.posts.some(function (post) { return post.id === id || post.media_url === url; })) return;
+      state.posts.push({
+        id: id,
+        author_id: AI_ROLES[i % AI_ROLES.length].id,
+        body: "",
+        is_video: true,
+        media_url: url,
+        media_urls: [url],
+        created_at: new Date(Date.now() - (i + 1) * 3600000).toISOString()
+      });
+    });
+    state.rooms.forEach(function (room, i) {
+      if (!room.video_url) room.video_url = clips[i % clips.length];
+      if (!room.cover_url) room.cover_url = String(clips[i % clips.length]).replace(".mp4", ".png");
+    });
+  }
+
   function roomClip(room) {
     if (room.video_url) return room.video_url;
     var posts = state.posts.filter(function (post) {
       return post.author_id === room.owner_id && String(post.media_url || "").indexOf(".mp4") >= 0;
     });
-    return posts.length ? posts[0].media_url : "";
+    if (posts.length) return posts[0].media_url;
+    var clips = liveClips();
+    if (!clips.length) return "";
+    var n = 0;
+    String(room.id || "").split("").forEach(function (ch) { n += ch.charCodeAt(0); });
+    return clips[n % clips.length];
   }
 
   function audienceIds() {
@@ -1113,7 +1187,7 @@
           '<img class="form-sky" src="img/FormSky.png" alt="" />' +
           '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           '<div class="form-title">Detail</div>' +
-          (post ? '<button class="head-icon like" data-act="like" data-id="' + post.id + '"><img src="img/' + (state.likes.indexOf(post.id) >= 0 ? "LikeOnGlyph.svg" : "FollowGlyph.svg") + '" alt="" /></button>' : "") +
+          (post ? '<button class="head-icon like" data-act="like" data-id="' + post.id + '"><img src="img/' + (state.likes.indexOf(String(post.id).toLowerCase()) >= 0 ? "LikeOnGlyph.svg" : "LikeGlyph.svg") + '" alt="" /></button>' : "") +
           (post ? '<button class="head-icon more" data-act="about-post" data-id="' + post.id + '"><img src="img/MoreCircle.svg" alt="" /></button>' : "") +
           '<img class="form-snow" src="img/SnowHem.png" alt="" />' +
           '<img class="form-sled" src="img/SledMark.png" alt="" />' +
@@ -1308,8 +1382,11 @@
   }
 
   function followCount(id, followingFlag) {
+    id = String(id || "").toLowerCase();
     return state.follows.filter(function (row) {
-      return followingFlag ? row.follower === id : row.followee === id;
+      var follower = String(row.follower || "").toLowerCase();
+      var followee = String(row.followee || "").toLowerCase();
+      return followingFlag ? follower === id : followee === id;
     }).length;
   }
 
@@ -1338,12 +1415,14 @@
 
   function shopView() {
     var arts = ["Coin5.png", "Coin10.png", "Coin15.png", "Coin20.png", "Coin25.png", "Coin30.png", "Coin35.png"];
+    var picked = state.shopPick || 0;
     var packs = (Bridge.env().packs || []).map(function (pack, i) {
-      return '<button class="pack' + (i === 0 ? " on" : "") + '" data-act="buy" data-id="' + esc(pack.id) + '">' +
+      return '<button class="pack' + (i === picked ? " on" : "") + '" data-act="buy" data-id="' + esc(pack.id) + '">' +
         '<img class="art" src="img/' + arts[i] + '" alt="" />' +
         '<div class="meta"><img src="img/Coin5.png" alt="" /><span>' + pack.amount + "</span></div>" +
         '<span class="price">' + esc(pack.price) + "</span></button>";
     }).join("");
+    packs = '<div class="shop-frame"></div>' + packs;
     return el(
       '<div class="form-page shop-page">' +
         '<div class="shop-head">' +
@@ -1394,6 +1473,8 @@
     if (kind === "block") ids = state.blocks;
     else if (kind === "fans") ids = state.follows.filter(function (row) { return row.followee === API.me(); }).map(function (row) { return row.follower; });
     else ids = state.follows.filter(function (row) { return row.follower === API.me(); }).map(function (row) { return row.followee; });
+    var aiIds = AI_ROLES.map(function (role) { return role.id; });
+    ids = ids.filter(function (id) { return aiIds.indexOf(String(id).toLowerCase()) < 0; });
     var title = kind === "fans" ? "Fans" : "Followed";
     var back = kind === "block" ? "settings" : "profile";
     var bots = kind === "block" ? "" : AI_ROLES.map(function (role) {
@@ -1608,14 +1689,18 @@
       if (act === "back") back();
       else if (act === "go") {
         var to = node.getAttribute("data-to");
-        if (to === "ai") { state.aiId = "ai:pegu"; state.ai = aiLines("ai:pegu"); }
+        if (to === "ai") { state.aiId = AI_ROLES[0].id; state.ai = aiLines(AI_ROLES[0].id); }
         go(to, to === "profile" ? { profile: API.me() } : null);
       }
       else if (act === "tab") {
         if (state.tab === id && state.route === "main") return;
+        var order = { home: 0, post: 1, chat: 2 };
+        var fromTab = order[state.tab] || 0;
+        var toTab = order[id] || 0;
+        var wasMain = state.route === "main";
         state.tab = id;
         state.route = "main";
-        motion = "fade";
+        motion = wasMain ? (toTab >= fromTab ? "tab-next" : "tab-prev") : "fade";
         draw();
       }
       else if (act === "post-filter") { state.postFilter = id; draw(); }
@@ -1623,7 +1708,7 @@
       else if (act === "agree") { await Bridge.eula(); go("auth"); }
       else if (act === "follow") {
         var who = String(id || "").toLowerCase();
-        if (!who || who === API.me() || aiRole(who)) return;
+        if (!who || who === API.me()) return;
         var on = !following(who);
         rememberFollow(who, on);
         draw();
@@ -1663,9 +1748,11 @@
         var liked = state.likes.indexOf(pid) < 0;
         rememberLike(pid, liked);
         draw();
-        try { await API.like(pid, liked); }
-        catch (err) {
-          if (!alreadyThere(err)) { rememberLike(pid, !liked); draw(); throw err; }
+        if (pid.indexOf("clip-") !== 0) {
+          try { await API.like(pid, liked); }
+          catch (err) {
+            if (!alreadyThere(err)) { rememberLike(pid, !liked); draw(); throw err; }
+          }
         }
         if (liked) Bridge.toast("Liked.");
       }
@@ -1699,6 +1786,16 @@
       else if (act === "people") go("people", { peopleKind: id });
       else if (act === "legal") await Bridge.legal(id);
       else if (act === "buy") {
+        var pack = node.closest(".pack") || node;
+        var grid = pack.parentNode;
+        var packs = grid ? Array.prototype.slice.call(grid.querySelectorAll(".pack")) : [];
+        var index = packs.indexOf(pack);
+        if (index < 0) index = state.shopPick || 0;
+        state.shopPick = index;
+        packs.forEach(function (item, i) { item.classList.toggle("on", i === index); });
+        var frame = grid && grid.querySelector(".shop-frame");
+        if (frame) frame.style.transform = "translate(" + pack.offsetLeft + "px," + pack.offsetTop + "px)";
+        await new Promise(function (resolve) { setTimeout(resolve, 340); });
         var bought = await Bridge.buy(id);
         if (bought && bought.ok) await reload();
       }
@@ -1779,8 +1876,7 @@
         var urls = clip && (clip.media_urls || (clip.media_url ? [clip.media_url] : []));
         state.preview = (urls && urls[0]) || "";
         state.previewVideo = true;
-        if (state.route !== "post") go("post", { post: id });
-        else draw();
+        draw();
       }
       else if (act === "report") { state.sheet = "report"; draw(); }
       else if (act === "feedback") { state.sheet = "feedback"; draw(); }
@@ -2002,32 +2098,44 @@
     lines.push(think);
     draw();
     try {
-      if (role.id === "ai:pegu") await API.addAI(true, body);
-      await API.spendGems(5);
+      if (role.id === AI_ROLES[0].id) {
+        try { await API.addAI(true, body); } catch (err) {}
+      }
+      var left = await API.spendGems(5);
+      if (state.me && typeof left === "number") state.me.gems = left;
     } catch (err) {
-      lines.pop();
-      lines.pop();
-      persistAI();
-      draw();
-      Bridge.toast(err.message || String(err));
-      return;
+      var msg = String((err && err.message) || err);
+      if (/not enough/i.test(msg)) {
+        lines.pop();
+        lines.pop();
+        persistAI();
+        draw();
+        Bridge.toast("Not enough coins.");
+        go("shop");
+        return;
+      }
     }
-    think.thinking = false;
+    if (state.route !== "ai") { persistAI(); return; }
     await typeAI(think, role.reply);
     persistAI();
-    if (role.id === "ai:pegu") { try { await API.addAI(false, role.reply); } catch (err) {} }
+    if (role.id === AI_ROLES[0].id) { try { await API.addAI(false, role.reply); } catch (err) {} }
   }
 
   async function typeAI(item, text) {
+    item.thinking = false;
     item.body = "";
     item.typing = true;
+    if (state.route !== "ai") return;
+    draw();
+    var bubble = document.querySelector(".ai-body .talk.you:last-child .bubble");
     for (var i = 0; i < text.length; i++) {
+      if (state.route !== "ai") return;
       item.body += text[i];
-      draw();
-      await new Promise(function (resolve) { setTimeout(resolve, 28); });
+      if (bubble) bubble.innerHTML = esc(item.body) + '<span class="ai-caret"></span>';
+      await new Promise(function (resolve) { setTimeout(resolve, 16); });
     }
     item.typing = false;
-    draw();
+    if (bubble && state.route === "ai") bubble.textContent = item.body;
   }
 
   function startPoll() {
