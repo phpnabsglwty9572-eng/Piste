@@ -158,9 +158,9 @@
     },
     block: function (other) {
       return firstInsert("/blocks", [
-        { blocker: me, blocked: other },
-        { blocker_id: me, blocked_id: other }
-      ]);
+        { blocker_id: me, blocked_id: other },
+        { blocker: me, blocked: other }
+      ], "return=minimal");
     },
     unblock: async function (other) {
       try {
@@ -172,12 +172,16 @@
       }
     },
     report: function (target, reason) {
-      var text = reason || "report";
+      var text = String(reason || "").trim() || "report";
+      if (text.length > 1000) text = text.slice(0, 1000);
+      var note = target ? (text + "\n" + target).slice(0, 1000) : text;
       return firstInsert("/reports", [
-        { reporter: me, target: target, reason: text },
+        { user_id: me, body: note },
+        { reporter: me, target: String(target || ""), reason: text },
         { reporter_id: me, target_id: target, reason: text },
-        { user_id: me, target_id: target, body: text }
-      ]);
+        { user_id: me, content: note },
+        { user_id: me, message: note }
+      ], "return=minimal");
     },
     feedback: function (body) {
       return firstInsert("/feedback", [

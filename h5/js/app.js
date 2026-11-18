@@ -2336,9 +2336,11 @@
         catch (err) { if (!alreadyThere(err)) throw err; }
         state.sheet = null;
         var leave = state.route !== "main";
+        motion = "replace";
+        draw();
         Bridge.toast("Added to Blacklist.");
-        await reload();
-        if (leave) back();
+        try { await reload(); } catch (err) {}
+        if (leave && state.route !== "main") back();
       }
       else if (act === "unblock") { await API.unblock(id); await reload(); Bridge.toast("Removed."); }
       else if (act === "logout") { state.sheet = "logout"; draw(); }
