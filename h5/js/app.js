@@ -13,6 +13,7 @@
     blocks: [],
     likes: [],
     roomLikes: [],
+    peopleOwner: "",
     people: [],
     lines: {},
     threads: {},
@@ -321,7 +322,11 @@
       row.followee = String(row.followee || "").toLowerCase();
       return row;
     });
-    state.blocks = (await API.blocks()).map(function (row) { return row.blocked; });
+    state.blocks = (await API.blocks() || []).map(function (row) {
+      var mine = String(row.blocker || row.blocker_id || "").toLowerCase();
+      if (mine && mine !== String(API.me() || "").toLowerCase()) return "";
+      return String(row.blocked || row.blocked_id || "").toLowerCase();
+    }).filter(Boolean);
     state.likes = (await API.likes()).map(function (row) { return row.post_id; });
     var threads = await API.threads();
     var hidden = (await API.hides()).map(function (row) { return String(row.thread_id || "").toLowerCase(); });
@@ -416,6 +421,7 @@
       chat: state.chat,
       profile: state.profile,
       peopleKind: state.peopleKind,
+      peopleOwner: state.peopleOwner,
       composeKind: state.composeKind,
       profileTab: state.profileTab,
       postFilter: state.postFilter,
@@ -617,6 +623,43 @@
     var liveBox = document.querySelector(".live-chat");
     if (thread) thread.scrollTop = thread.scrollHeight;
     if (liveBox) liveBox.scrollTop = liveBox.scrollHeight;
+    watchPhotos(root);
+  }
+
+  function watchPhotos(root) {
+    root.querySelectorAll("img").forEach(function (img) {
+      if (img.dataset.wait === "1") return;
+      var src = img.getAttribute("src") || "";
+      var avatar = img.classList.contains("av") || img.classList.contains("face") || img.classList.contains("prof-cover");
+      var remote = src.indexOf("/storage/") >= 0 || src.indexOf("supabase.co") >= 0;
+      if (!avatar && !remote) return;
+      img.dataset.wait = "1";
+      img.classList.add("pending");
+      var parent = img.parentElement;
+      var style = window.getComputedStyle(img);
+      var hostStyle = parent ? window.getComputedStyle(parent) : null;
+      var fills = hostStyle && style.display === "block" && img.offsetWidth > 48 && Math.abs(img.offsetWidth - parent.clientWidth) < 2;
+      var box = null;
+      if ((style.position === "absolute" || fills) && parent) {
+        parent.classList.add("wait-host");
+        if (hostStyle.position === "static") parent.classList.add("pin");
+        box = parent;
+      } else if (parent) {
+        box = document.createElement("span");
+        box.className = "wait-photo";
+        parent.insertBefore(box, img);
+        box.appendChild(img);
+      }
+      function done() {
+        img.classList.remove("pending");
+        if (box) box.classList.add("ready");
+      }
+      if (img.complete && img.naturalWidth) done();
+      else {
+        img.addEventListener("load", done);
+        img.addEventListener("error", done);
+      }
+    });
   }
 
   function bindSheetDrag(layer) {
@@ -947,7 +990,7 @@
       ? '<video class="stage" src="' + esc(photo) + '" autoplay muted loop playsinline data-act="preview" data-id="' + post.id + '"></video>'
       : (post.is_video
         ? '<video class="stage" src="' + esc(photo) + '" muted playsinline preload="metadata" poster="' + esc(poster) + '" data-act="open-post" data-id="' + post.id + '"></video>'
-        : '<img class="stage' + (photo.indexOf("http") === 0 ? " shine" : "") + '" src="' + esc(photo) + '" alt="" data-act="preview" data-id="' + post.id + '" onload="this.classList.remove(\'shine\')" />');
+        : '<img class="stage" src="' + esc(photo) + '" alt="" data-act="preview" data-id="' + post.id + '" />');
     return '<article class="live-card post-card">' +
       '<div class="live-photo tall">' +
         stage +
@@ -991,20 +1034,20 @@
     var gems = state.me.gems || state.me.coins || 0;
     var listed = listPeople();
     var chips = listed.map(function (person) {
-      return '<button class="friend-card" data-act="open-chat" data-id="' + person.id + '">' +
-        '<span class="face"><img src="' + esc(person.avatar || "img/SampleAvatar.png") + '" alt="" />' +
-        '<img class="tick" src="img/VerifyBadge.png" alt="" /></span>' +
+      return '<div class="friend-card" data-act="open-chat" data-id="' + person.id + '">' +
+        '<span class="face" data-act="profile" data-id="' + person.id + '"><img src="' + esc(person.avatar || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + person.id + '" />' +
+        '<img class="tick" src="img/FriendTick.png" alt="" /></span>' +
         '<span class="nm">' + esc(person.name) + '</span>' +
-        '<span class="hd">' + esc(person.handle || "") + "</span></button>";
+        '<span class="hd">' + esc(person.handle || "") + "</span></div>";
     }).join("");
     var rows = listed.map(function (person) {
       return '<div class="chat-swipe">' +
         '<button class="chat-del" type="button" data-act="ask-delete-chat" data-id="' + person.id + '"><img src="img/ChatTrash.svg" alt="" /></button>' +
-        '<button class="chat-row" data-act="open-chat" data-id="' + person.id + '">' +
-        '<img class="av" src="' + esc(person.avatar || "img/SampleAvatar.png") + '" alt="" />' +
+        '<div class="chat-row" data-act="open-chat" data-id="' + person.id + '">' +
+        '<img class="av" src="' + esc(person.avatar || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + person.id + '" />' +
         '<span class="meta"><span class="nm">' + esc(person.name) + '</span>' +
         '<span class="pv">' + esc(person.preview) + "</span></span>" +
-        (person.time ? '<span class="tm">' + esc(person.time) + "</span>" : "") + "</button></div>";
+        (person.time ? '<span class="tm">' + esc(person.time) + "</span>" : "") + "</div></div>";
     }).join("");
     return '<div class="feed-page">' +
       '<div class="feed-head short">' +
@@ -1208,11 +1251,11 @@
       : '<img class="stage" src="' + esc(photo) + '" alt="" />';
     var crowd = roomCrowd(state.live || room.id);
     var ids = crowd.ids;
-    var faces = ids.slice(0, 3).map(function (id) {
-      var person = state.profiles[id] || {};
-      return person.avatar_url || "img/SampleAvatar.png";
-    });
-    if (!faces.length) faces = [user.avatar_url || "img/SampleAvatar.png"];
+    var faces = ids.slice(0, 3).map(function (personId) {
+      var person = state.profiles[personId] || {};
+      return '<img src="' + esc(person.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + esc(personId) + '" />';
+    }).join("");
+    if (!faces) faces = '<img src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + esc(room.owner_id || "") + '" />';
     var welcome = "Welcome! Respect others and keep chats positive. No hate or offensive comments. Enjoy our friendly live space.";
     var lines = (state.roomLines || []).map(liveLineHTML).join("");
     var mine = room.owner_id && room.owner_id === API.me();
@@ -1220,11 +1263,11 @@
       '<div class="live-room">' +
         stage +
         '<div class="live-badge"><img src="img/LiveGlyph.svg" alt="" />Live</div>' +
-        '<button class="viewers" data-act="audience">' + faces.map(function (src) { return '<img src="' + src + '" alt="" />'; }).join("") +
-          '<span class="count">' + crowd.total + '</span></button>' +
+        '<div class="viewers">' + faces +
+          '<span class="count" data-act="audience">' + crowd.total + "</span></div>" +
         (user.name ? '<div class="host">' +
-          '<img class="av" src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" />' +
-          '<div class="meta"><div class="nm">' + esc(user.name) + '</div><div class="hd">' + esc(user.handle || "") + "</div></div>" +
+          '<img class="av" src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + esc(room.owner_id || "") + '" />' +
+          '<div class="meta" data-act="profile" data-id="' + esc(room.owner_id || "") + '"><div class="nm">' + esc(user.name) + '</div><div class="hd">' + esc(user.handle || "") + "</div></div>" +
           (mine || following(room.owner_id) ? "" : '<button class="plus" data-act="follow" data-id="' + room.owner_id + '"><img src="img/BadgePlus.png" alt="" /></button>') +
         "</div>" : "") +
         '<div class="live-chat"><div class="welcome">' + welcome + "</div>" + lines + "</div>" +
@@ -1293,7 +1336,7 @@
           '<div class="form-label"><img src="img/FieldBell.png" alt="" />' + (imageTab ? "Image" : "Video") + "</div>" +
           '<button class="upload-cover compose-tile" type="button" data-act="pick">' + tile + "</button>" +
           '<div class="form-label"><img src="img/FieldBell.png" alt="" />Content</div>' +
-          '<textarea class="form-area" name="body" placeholder="Please enter..."></textarea>' +
+          '<textarea class="form-area" name="body" placeholder="Please enter...">' + esc(state.draft) + "</textarea>" +
           '<div class="form-label"><img src="img/FieldBell.png" alt="" />Label</div>' +
           '<div class="tag-row"><button class="tag add" type="button" data-act="add-tag"><img src="img/TagPlus.svg" alt="" />Add tags</button>' +
             (state.tags || []).map(function (tag) { return '<span class="tag">#' + esc(tag) + "</span>"; }).join("") +
@@ -1315,9 +1358,11 @@
           '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
           '<div class="form-title">' + esc(user.name || "Chat") + "</div>" +
           (user.name ? '<div class="head-host">' +
-            '<img class="av" src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" />' +
-            '<div class="meta"><div class="nm">' + esc(user.name) + '</div><div class="hd">' + esc(user.handle || "") + "</div></div>" +
-            (following(state.chat) ? "" : '<button class="plus" data-act="follow" data-id="' + state.chat + '"><img src="img/BadgePlus.png" alt="" /></button>') +
+            '<img class="av" src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + esc(state.chat || "") + '" />' +
+            '<div class="meta" data-act="profile" data-id="' + esc(state.chat || "") + '"><div class="nm">' + esc(user.name) + '</div><div class="hd">' + esc(user.handle || "") + "</div></div>" +
+            (state.chat && state.chat !== myId()
+              ? '<button class="plus" data-act="follow" data-id="' + state.chat + '"><img src="img/' + (following(state.chat) ? "FollowedGlyph.svg" : "BadgePlus.png") + '" alt="" /></button>'
+              : "") +
           "</div>" : "") +
           '<img class="form-snow" src="img/SnowHem.png" alt="" />' +
           '<img class="form-sled" src="img/SledMark.png" alt="" />' +
@@ -1339,9 +1384,9 @@
       body = lines.map(function (row) {
         var text = row.thinking ? "..." : esc(row.body) + (row.typing ? '<span class="ai-caret"></span>' : "");
         return '<div class="talk ' + (row.mine ? "me" : "you") + '">' +
-          (row.mine ? "" : '<img class="face" src="' + esc(role.avatar) + '" alt="" />') +
+          (row.mine ? "" : '<img class="face" src="' + esc(role.avatar) + '" alt="" data-act="profile" data-id="' + esc(role.id) + '" />') +
           '<div class="bubble">' + text + "</div>" +
-          (row.mine ? '<img class="face" src="' + esc((state.me && state.me.avatar_url) || "img/AIUserFace.png") + '" alt="" />' : "") +
+          (row.mine ? '<img class="face" src="' + esc((state.me && state.me.avatar_url) || "img/AIUserFace.png") + '" alt="" data-act="profile" data-id="' + esc(myId()) + '" />' : "") +
         "</div>";
       }).join("");
     } else {
@@ -1356,7 +1401,7 @@
           '<img class="home-sky" src="img/HomeSky.png" alt="" />' +
           '<img class="home-cap" src="img/SnowCap.png" alt="" />' +
           '<button class="form-back" data-act="back"><img src="img/BackButton.svg" alt="" /></button>' +
-          '<div class="pegu-chip"><img src="' + esc(role.avatar) + '" alt="" /><div><b>' + esc(role.name) + '</b><span>5 /Message</span></div></div>' +
+          '<div class="pegu-chip" data-act="profile" data-id="' + esc(role.id) + '"><img src="' + esc(role.avatar) + '" alt="" /><div><b>' + esc(role.name) + '</b><span>5 /Message</span></div></div>' +
           '<button class="head-icon more" data-act="about-ai"><img src="img/MoreCircle.svg" alt="" /></button>' +
           '<div class="home-marks">' +
             '<img class="home-flake-a" src="img/FlakeA.png" alt="" />' +
@@ -1364,7 +1409,7 @@
             '<img class="home-flake-c" src="img/FlakeA.png" alt="" />' +
             '<div class="home-title">' + esc(role.title) + "</div>" +
             (role.blurb ? '<div class="home-blurb">' + esc(role.blurb) + "</div>" : "") +
-            '<div class="home-penguin"><img src="' + esc(role.avatar) + '" alt="" /></div>' +
+            '<div class="home-penguin" data-act="profile" data-id="' + esc(role.id) + '"><img src="' + esc(role.avatar) + '" alt="" /></div>' +
           "</div>" +
           '<img class="home-edge" src="img/SnowHem.png" alt="" />' +
         "</div>" +
@@ -1382,8 +1427,8 @@
     var photo = role ? role.avatar : (user.avatar_url || remembered("avatar", state.chat) || "img/SampleAvatar.png");
     return el(
       '<div class="call-room">' +
-        '<img class="bg" src="' + esc(photo) + '" alt="" />' +
-        '<div class="veil"></div>' +
+        '<img class="bg" src="' + esc(photo) + '" alt="" data-act="profile" data-id="' + esc(state.chat || (role && role.id) || "") + '" />' +
+        '<div class="veil" data-act="profile" data-id="' + esc(state.chat || (role && role.id) || "") + '"></div>' +
         '<video class="local" autoplay playsinline muted></video>' +
         '<div class="call-stack">' +
           '<div class="call-meta"><b>' + esc(user.name || role && role.name || "") + "</b><span>Video Call...</span></div>" +
@@ -1399,10 +1444,13 @@
     var face = user.avatar_url || remembered("avatar", id) || fileURL(id, "avatar.jpg");
     var coverURL = user.cover_url || remembered("cover", id) || fileURL(id, "cover.jpg") || "img/AuthSky.png";
     var posts = state.posts.filter(function (row) {
-      if (state.profileTab === "like") return state.likes.indexOf(row.id) >= 0;
+      if (state.profileTab === "like") return state.likes.indexOf(String(row.id).toLowerCase()) >= 0;
       return row.author_id === id;
     });
-    var cards = posts.map(postCard).join("");
+    var rooms = state.profileTab === "like"
+      ? state.rooms.filter(function (room) { return roomLiked(room.id); })
+      : [];
+    var cards = rooms.map(homeCard).join("") + posts.map(postCard).join("");
     var empty = emptyPen();
     return el(
       '<div class="form-page profile-page">' +
@@ -1449,13 +1497,32 @@
     );
   }
 
-  function followCount(id, followingFlag) {
-    id = String(id || "").toLowerCase();
-    return state.follows.filter(function (row) {
+  function relationIds(owner, kind) {
+    owner = String(owner || "").toLowerCase();
+    var seen = {};
+    var ids = [];
+    function add(id) {
+      id = String(id || "").toLowerCase();
+      if (!id || id === owner || seen[id]) return;
+      seen[id] = 1;
+      ids.push(id);
+    }
+    if (kind === "block") {
+      state.blocks.forEach(add);
+      return ids;
+    }
+    AI_ROLES.forEach(function (role) { add(role.id); });
+    state.follows.forEach(function (row) {
       var follower = String(row.follower || "").toLowerCase();
       var followee = String(row.followee || "").toLowerCase();
-      return followingFlag ? follower === id : followee === id;
-    }).length;
+      if (kind === "fans") { if (followee === owner) add(follower); }
+      else if (follower === owner) add(followee);
+    });
+    return ids;
+  }
+
+  function followCount(id, followingFlag) {
+    return relationIds(id, followingFlag ? "follow" : "fans").length;
   }
 
   function settingsView() {
@@ -1537,26 +1604,23 @@
 
   function peopleView() {
     var kind = state.peopleKind;
-    var ids = [];
-    if (kind === "block") ids = state.blocks;
-    else if (kind === "fans") ids = state.follows.filter(function (row) { return row.followee === API.me(); }).map(function (row) { return row.follower; });
-    else ids = state.follows.filter(function (row) { return row.follower === API.me(); }).map(function (row) { return row.followee; });
-    var aiIds = AI_ROLES.map(function (role) { return role.id; });
-    ids = ids.filter(function (id) { return aiIds.indexOf(String(id).toLowerCase()) < 0; });
+    var owner = String(state.peopleOwner || API.me() || "").toLowerCase();
+    var ids = relationIds(owner, kind);
     var title = kind === "fans" ? "Fans" : "Followed";
     var back = kind === "block" ? "settings" : "profile";
-    var bots = kind === "block" ? "" : AI_ROLES.map(function (role) {
-      return '<button class="people-row" data-act="open-chat" data-id="' + role.id + '"><img src="' + esc(role.avatar) + '" alt="" />' +
-        '<span class="meta"><b>' + esc(role.name) + "</b><span>" + esc(role.handle) + "</span></span></button>";
-    }).join("");
-    var rows = bots + ids.map(function (id) {
-      var user = state.profiles[id] || { name: id };
+    var rows = ids.map(function (id) {
+      var role = aiRole(id);
+      var user = role || state.profiles[id] || { name: id };
+      var face = role ? role.avatar : (user.avatar_url || "img/SampleAvatar.png");
+      var name = role ? role.name : (user.name || "");
+      var handle = role ? role.handle : (user.handle || "");
       var action = "";
       if (kind === "block") action = '<button class="pill-act gray" data-act="unblock" data-id="' + id + '">Remove</button>';
       else if (kind === "fans" && !following(id)) action = '<button class="pill-act blue" data-act="follow" data-id="' + id + '">Follow<img src="img/BadgePlus.png" alt="" /></button>';
       else action = '<button class="pill-act gray" data-act="follow" data-id="' + id + '">Followed</button>';
-      return '<div class="people-row"><img src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + id + '" />' +
-        '<div class="meta" data-act="profile" data-id="' + id + '"><b>' + esc(user.name) + "</b><span>" + esc(user.handle || "") + "</span></div>" + action + "</div>";
+      var open = role ? "open-chat" : "profile";
+      return '<div class="people-row"><img src="' + esc(face) + '" alt="" data-act="profile" data-id="' + id + '" />' +
+        '<div class="meta" data-act="' + open + '" data-id="' + id + '"><b>' + esc(name) + "</b><span>" + esc(handle) + "</span></div>" + action + "</div>";
     }).join("");
     return el(
       '<div class="form-page">' + formChrome(title, back) +
@@ -1570,9 +1634,10 @@
     if (state.sheet === "about") {
       var rows = "";
       if (state.aboutKind === "post") {
-        rows = '<button class="set-row" data-act="report"><img src="img/MenuReport.svg" alt="" /><span>Report</span></button>' +
-          '<button class="set-row" data-act="delete-target"><img src="img/SetTrash.svg" alt="" /><span>Delete Post</span></button>' +
-          '<button class="set-row" data-act="block-user"><img src="img/MenuSad.svg" alt="" /><span>Add to Blacklist</span></button>';
+        rows = state.aboutMine
+          ? '<button class="set-row" data-act="delete-target"><img src="img/SetTrash.svg" alt="" /><span>Delete Post</span></button>'
+          : '<button class="set-row" data-act="report"><img src="img/MenuReport.svg" alt="" /><span>Report</span></button>' +
+            '<button class="set-row" data-act="block-user"><img src="img/MenuSad.svg" alt="" /><span>Add to Blacklist</span></button>';
       } else if (state.aboutKind === "comment") {
         rows = state.aboutMine
           ? '<button class="set-row" data-act="delete-comment"><img src="img/SetTrash.svg" alt="" /><span>Delete</span></button>'
@@ -1583,6 +1648,8 @@
           '<button class="set-row" data-act="delete-target"><img src="img/SetTrash.svg" alt="" /><span>Delete Chat</span></button>';
       } else if (state.aboutKind === "ai") {
         rows = '<button class="set-row" data-act="report"><img src="img/MenuReport.svg" alt="" /><span>Report</span></button>';
+      } else if (state.aboutMine) {
+        rows = "";
       } else {
         rows = '<button class="set-row" data-act="report"><img src="img/MenuReport.svg" alt="" /><span>Report</span></button>' +
           '<button class="set-row" data-act="block-user"><img src="img/MenuSad.svg" alt="" /><span>Add to Blacklist</span></button>';
@@ -1676,8 +1743,8 @@
     var rows = ids.map(function (id) {
       var user = state.profiles[id] || {};
       var followed = following(id);
-      return '<div class="people-row"><img src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" />' +
-        '<div class="meta"><b>' + esc(user.name || "") + "</b><span>" + esc(user.handle || "") + "</span></div>" +
+      return '<div class="people-row"><img src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + id + '" />' +
+        '<div class="meta" data-act="profile" data-id="' + id + '"><b>' + esc(user.name || "") + "</b><span>" + esc(user.handle || "") + "</span></div>" +
         (id === API.me() ? "" : followed
           ? '<button class="pill-act gray" data-act="follow" data-id="' + id + '">Followed</button>'
           : '<button class="pill-act blue" data-act="follow" data-id="' + id + '">Follow<img src="img/BadgePlus.png" alt="" /></button>') +
@@ -1732,6 +1799,11 @@
       if (x < -32) row.classList.add("open");
       else row.classList.remove("open");
     });
+  }
+
+  function keepDraft() {
+    var area = document.querySelector('form[data-form="compose"] textarea[name="body"]');
+    if (area) state.draft = area.value;
   }
 
   async function onClick(event) {
@@ -1844,8 +1916,11 @@
         state.sheet = "delete-chat";
         draw();
       }
-      else if (act === "profile") go("profile", { profile: id });
-      else if (act === "people") go("people", { peopleKind: id });
+      else if (act === "profile") { if (id) go("profile", { profile: id }); }
+      else if (act === "people") {
+        var owner = state.route === "profile" ? (state.profile || API.me()) : API.me();
+        go("people", { peopleKind: id, peopleOwner: owner });
+      }
       else if (act === "legal") await Bridge.legal(id);
       else if (act === "buy") {
         var pack = node.closest(".pack") || node;
@@ -1863,9 +1938,17 @@
       }
       else if (act === "profile-tab") { state.profileTab = id; draw(); }
       else if (act === "clean-cache") { Bridge.toast("Cleaned."); }
-      else if (act === "compose-kind") { state.composeKind = id; draw(); }
+      else if (act === "compose-kind") {
+        keepDraft();
+        if (state.composeKind !== id) {
+          state.composeKind = id;
+          state.picked = [];
+        }
+        draw();
+      }
       else if (act === "pick-gift") { state.giftPick = id; draw(); }
       else if (act === "pick") {
+        keepDraft();
         var media = await Bridge.pick(state.composeKind === "video" ? 1 : 9, state.composeKind === "video");
         state.picked = pickedItems(media);
         draw();
@@ -1936,7 +2019,7 @@
       else if (act === "about-chat") openAbout("chat", id);
       else if (act === "about-person") openAbout("live", id);
       else if (act === "about-ai") openAbout("ai", "pegu");
-      else if (act === "add-tag") { state.sheet = "tag"; draw(); }
+      else if (act === "add-tag") { keepDraft(); state.sheet = "tag"; draw(); }
       else if (act === "call") go("call");
       else if (act === "ai-prompt") { await sendAI(id); }
       else if (act === "close-sheet") closeSheet();
@@ -1977,8 +2060,14 @@
         Bridge.toast("Deleted.");
       }
       else if (act === "confirm-delete-post") {
-        if (state.aboutId) await API.deletePost(state.aboutId);
-        state.sheet = null; await reload(); Bridge.toast("Deleted."); back();
+        if (!state.aboutMine) return;
+        var postId = String(state.aboutId || "");
+        if (postId && postId.indexOf("clip-") !== 0) await API.deletePost(postId);
+        state.sheet = null;
+        var leavePost = state.route === "post";
+        await reload();
+        Bridge.toast("Deleted.");
+        if (leavePost) back();
       }
       else if (act === "confirm-delete-chat") {
         if (aiRole(state.chat)) {
@@ -2000,7 +2089,18 @@
         if (!stay) back();
       }
       else if (act === "confirm-block") {
-        await API.block(state.reportTarget); state.sheet = null; await reload(); Bridge.toast("Blocked."); back();
+        var target = String(state.reportTarget || "").toLowerCase();
+        if (!target || target === myId()) {
+          Bridge.toast("You can't block yourself.");
+          return;
+        }
+        try { await API.block(target); }
+        catch (err) { if (!alreadyThere(err)) throw err; }
+        state.sheet = null;
+        var leave = state.route !== "main";
+        await reload();
+        Bridge.toast("Blocked.");
+        if (leave) back();
       }
       else if (act === "unblock") { await API.unblock(id); await reload(); Bridge.toast("Removed."); }
       else if (act === "logout") { state.sheet = "logout"; draw(); }
@@ -2018,15 +2118,16 @@
     if (kind === "post") {
       var post = state.posts.filter(function (row) { return row.id === id; })[0];
       state.reportTarget = post ? post.author_id : id;
-      state.aboutMine = post && post.author_id === API.me();
+      state.aboutMine = post && String(post.author_id || "").toLowerCase() === myId();
     } else if (kind === "comment") {
       var comment = state.comments.filter(function (row) { return row.id === id; })[0];
       state.reportTarget = comment ? comment.author_id : id;
-      state.aboutMine = comment && comment.author_id === API.me();
+      state.aboutMine = comment && String(comment.author_id || "").toLowerCase() === myId();
     } else {
-      state.reportTarget = id === "pegu" ? id : (id || state.chat);
-      state.aboutMine = false;
+      state.reportTarget = id === "pegu" ? AI_ROLES[0].id : (id || state.chat);
+      state.aboutMine = String(state.reportTarget || "").toLowerCase() === myId();
     }
+    if (kind !== "post" && kind !== "comment" && kind !== "chat" && kind !== "ai" && state.aboutMine) return;
     state.sheet = "about";
     draw();
   }
@@ -2050,7 +2151,11 @@
       var btn = form.querySelector(".snow-btn img") || document.querySelector(".form-foot .snow-btn img");
       if (!btn) return;
       var filled = false;
-      if (kind === "compose") filled = !!(state.picked && state.picked.length);
+      if (kind === "compose") {
+        var area = form.querySelector("textarea[name=body]");
+        if (area) state.draft = area.value;
+        filled = !!(state.picked && state.picked.length);
+      }
       else if (kind === "edit") filled = !!(event.target.value || "").trim();
       else filled = Array.prototype.every.call(form.querySelectorAll("input[required], input[name]"), function (input) {
         return String(input.value || "").trim();
@@ -2138,6 +2243,7 @@
         await API.publish(caption, urls, state.composeKind === "video");
         state.picked = [];
         state.tags = [];
+        state.draft = "";
         await reload();
         Bridge.toast("Released.");
         stack = [];
@@ -2154,7 +2260,11 @@
         Bridge.toast("Saved.");
         go("profile", { profile: API.me() });
       } else if (kind === "feedback") { await API.feedback(body); state.sheet = null; Bridge.toast("Sent."); draw(); }
-      else if (kind === "report") { await API.report(state.reportTarget, String(data.get("reason") || body)); state.sheet = null; Bridge.toast("Reported."); draw(); }
+      else if (kind === "report") {
+        try { await API.report(state.reportTarget, String(data.get("reason") || body)); }
+        catch (err) { if (!alreadyThere(err)) throw err; }
+        state.sheet = null; Bridge.toast("Reported."); draw();
+      }
     } catch (err) {
       Bridge.toast(err.message || String(err));
     } finally {

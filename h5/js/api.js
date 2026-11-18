@@ -38,6 +38,19 @@
     return rest("/rpc/" + name, "POST", body || {});
   }
 
+  async function firstInsert(path, rows) {
+    var last = null;
+    for (var i = 0; i < rows.length; i++) {
+      try { return await rest(path, "POST", rows[i]); }
+      catch (err) {
+        last = err;
+        var msg = String(err && err.message || "");
+        if (msg.indexOf("column") < 0 && msg.indexOf("schema") < 0) throw err;
+      }
+    }
+    throw last || new Error("Request failed");
+  }
+
   function saveTokens(session) {
     if (!session) return;
     var bag = session.access_token || session.accessToken ? session : (session.session || session);
@@ -87,7 +100,14 @@
       return rest("/rooms?owner_id=in.(" + ids.join(",") + ")&order=created_at.desc");
     },
     follows: function () { return rest("/follows?select=*"); },
-    blocks: function () { return rest("/blocks?blocker=eq." + me); },
+    blocks: async function () {
+      try { return await rest("/blocks?blocker=eq." + me); }
+      catch (err) {
+        var msg = String(err && err.message || "");
+        if (msg.indexOf("column") < 0 && msg.indexOf("schema") < 0) throw err;
+        return rest("/blocks?blocker_id=eq." + me);
+      }
+    },
     likes: function () { return rest("/post_likes?user_id=eq." + me); },
     threads: function () { return rest("/threads?or=(user_low.eq." + me + ",user_high.eq." + me + ")"); },
     hides: function () { return rest("/thread_hides?user_id=eq." + me); },
@@ -136,10 +156,28 @@
     hideThread: function (thread) {
       return rest("/thread_hides", "POST", { thread_id: thread, user_id: me });
     },
-    block: function (other) { return rest("/blocks", "POST", { blocker: me, blocked: other }); },
-    unblock: function (other) { return rest("/blocks?blocker=eq." + me + "&blocked=eq." + other, "DELETE"); },
+    block: function (other) {
+      return firstInsert("/blocks", [
+        { blocker: me, blocked: other },
+        { blocker_id: me, blocked_id: other }
+      ]);
+    },
+    unblock: async function (other) {
+      try {
+        return await rest("/blocks?blocker=eq." + me + "&blocked=eq." + other, "DELETE");
+      } catch (err) {
+        var msg = String(err && err.message || "");
+        if (msg.indexOf("column") < 0 && msg.indexOf("schema") < 0) throw err;
+        return rest("/blocks?blocker_id=eq." + me + "&blocked_id=eq." + other, "DELETE");
+      }
+    },
     report: function (target, reason) {
-      return rest("/reports", "POST", { reporter: me, target: target, reason: reason });
+      var text = reason || "report";
+      return firstInsert("/reports", [
+        { reporter: me, target: target, reason: text },
+        { reporter_id: me, target_id: target, reason: text },
+        { user_id: me, target_id: target, body: text }
+      ]);
     },
     feedback: function (body) { return rest("/feedback", "POST", { user_id: me, body: body }); },
     joinRoom: function (room) { return rest("/room_members", "POST", { room_id: room, user_id: me }); },
