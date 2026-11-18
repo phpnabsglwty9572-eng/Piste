@@ -719,6 +719,42 @@
     if (thread) thread.scrollTop = thread.scrollHeight;
     if (liveBox) liveBox.scrollTop = liveBox.scrollHeight;
     watchPhotos(root);
+    startPostVideos(root);
+  }
+
+  function markPostVideo(video, playing) {
+    var button = video.parentElement && video.parentElement.querySelector(".play");
+    if (!button) return;
+    var icon = button.querySelector("img");
+    if (icon) icon.src = playing ? "img/PauseButton.svg" : "img/PlayButton.svg";
+    button.classList.toggle("on", !!playing);
+  }
+
+  function playPostVideo(video) {
+    document.querySelectorAll(".post-card video.stage").forEach(function (other) {
+      if (other !== video && !other.paused) other.pause();
+    });
+    video.muted = false;
+    var pending = video.play();
+    if (pending && pending.catch) {
+      pending.catch(function () {
+        video.muted = true;
+        var again = video.play();
+        if (again && again.catch) again.catch(function () { markPostVideo(video, false); });
+      });
+    }
+  }
+
+  function startPostVideos(root) {
+    root.querySelectorAll(".post-card video.stage").forEach(function (video) {
+      if (video.dataset.bound === "1") return;
+      video.dataset.bound = "1";
+      video.playsInline = true;
+      video.addEventListener("play", function () { markPostVideo(video, true); });
+      video.addEventListener("pause", function () { markPostVideo(video, false); });
+      video.addEventListener("ended", function () { markPostVideo(video, false); });
+      if (video.autoplay || video.hasAttribute("autoplay")) playPostVideo(video);
+    });
   }
 
   function watchPhotos(root) {
@@ -1097,19 +1133,24 @@
     var liked = state.likes.indexOf(String(post.id).toLowerCase()) >= 0;
     var onDetail = state.route === "post";
     var poster = String(photo).replace(/\.mp4(\?.*)?$/, ".png$1");
-    var stage = post.is_video && onDetail
-      ? '<video class="stage" src="' + esc(photo) + '" autoplay muted loop playsinline data-act="preview" data-id="' + post.id + '"></video>'
-      : (post.is_video
-        ? '<video class="stage" src="' + esc(photo) + '" muted playsinline preload="metadata" poster="' + esc(poster) + '" data-act="open-post" data-id="' + post.id + '"></video>'
-        : '<img class="stage" src="' + esc(photo) + '" alt="" data-act="preview" data-id="' + post.id + '" />');
+    var stage = post.is_video
+      ? '<video class="stage" src="' + esc(photo) + '"' +
+        (onDetail ? " autoplay loop" : ' poster="' + esc(poster) + '"') +
+        ' playsinline webkit-playsinline preload="' + (onDetail ? "auto" : "metadata") + '"' +
+        ' data-act="' + (onDetail ? "toggle-video" : "open-post") + '" data-id="' + post.id + '"></video>'
+      : '<img class="stage" src="' + esc(photo) + '" alt="" data-act="preview" data-id="' + post.id + '" />';
     var actions = onDetail ? "" :
       '<button class="icon34" data-act="like" data-id="' + post.id + '"><img src="img/' + (liked ? "LikeOnGlyph.svg" : "LikeGlyph.svg") + '" alt="" /></button>' +
       '<button class="icon34" data-act="open-post" data-id="' + post.id + '"><img src="img/CommentGlyph.svg" alt="" /></button>' +
       '<button class="icon34" data-act="about-post" data-id="' + post.id + '"><img src="img/MoreCircle.svg" alt="" /></button>';
-    return '<article class="live-card post-card' + (onDetail ? " detail-card" : "") + '">' +
+    return '<article class="live-card post-card' + (onDetail ? " detail-card" : "") + '"' +
+      (onDetail || !post.is_video ? "" : ' data-act="open-post" data-id="' + post.id + '"') + '>' +
       '<div class="live-photo tall">' +
         stage +
-        (post.is_video ? '<button class="play" data-act="play-video" data-id="' + post.id + '"><img src="img/PlayButton.svg" alt="" /></button>' : "") +
+        (post.is_video
+          ? '<button class="play' + (onDetail ? " on" : "") + '" data-act="toggle-video" data-id="' + post.id + '"><img src="img/' + (onDetail ? "PauseButton.svg" : "PlayButton.svg") + '" alt="" /></button>' +
+            '<button class="vid-full" data-act="full-video" data-id="' + post.id + '"><img src="img/FullScreen.svg" alt="" /></button>'
+          : "") +
         '<div class="live-bar">' +
           '<div class="author">' +
             '<img class="av" src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + post.author_id + '" />' +
@@ -2219,12 +2260,21 @@
         state.previewVideo = !!(post && post.is_video);
         draw();
       }
-      else if (act === "play-video") {
-        var clip = state.posts.filter(function (row) { return row.id === id; })[0];
-        var urls = clip && (clip.media_urls || (clip.media_url ? [clip.media_url] : []));
-        state.preview = (urls && urls[0]) || "";
-        state.previewVideo = true;
-        draw();
+      else if (act === "toggle-video") {
+        var video = node.closest(".live-photo");
+        video = video && video.querySelector("video.stage");
+        if (!video) return;
+        if (video.paused || video.ended) playPostVideo(video);
+        else video.pause();
+      }
+      else if (act === "full-video") {
+        var full = node.closest(".live-photo");
+        full = full && full.querySelector("video.stage");
+        if (!full) return;
+        full.playsInline = true;
+        if (full.paused || full.ended) playPostVideo(full);
+        if (full.webkitEnterFullscreen) full.webkitEnterFullscreen();
+        else if (full.requestFullscreen) full.requestFullscreen();
       }
       else if (act === "report") { state.sheet = "report"; draw(); }
       else if (act === "feedback") { state.sheet = "feedback"; draw(); }

@@ -367,9 +367,16 @@ img.avatar-wait { background: none; animation: none; }
 .live-badge img { width: 20px; height: 20px; }
 .play {
   position: absolute; left: 154.5px; top: 154.5px; width: 34px; height: 34px;
-  border: 0; padding: 0; background: none;
+  border: 0; padding: 0; background: none; z-index: 3;
 }
 .play img { width: 34px; height: 34px; }
+.vid-full {
+  position: absolute; right: 8px; top: 8px; z-index: 3;
+  width: 28px; height: 28px; border: 0; padding: 0; border-radius: 8px;
+  background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center;
+}
+.vid-full img { width: 16px; height: 16px; display: block; }
 .live-bar {
   position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; align-items: center; gap: 8px;
 }
