@@ -39,6 +39,11 @@ enum YoohooBackend {
         (try? await client.auth.session)?.refreshToken
     }
 
+    static func sessionTokens() async -> (access: String?, refresh: String?) {
+        let session = try? await client.auth.session
+        return (session?.accessToken, session?.refreshToken)
+    }
+
     static func applySession(access: String, refresh: String) async throws {
         try await client.auth.setSession(accessToken: access, refreshToken: refresh)
     }

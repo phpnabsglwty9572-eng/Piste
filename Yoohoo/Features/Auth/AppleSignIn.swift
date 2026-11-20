@@ -25,13 +25,13 @@ enum AppleSignIn {
     }
 
     @MainActor
-    static func request() async throws -> Credential {
+    static func request(anchor: ASPresentationAnchor? = nil) async throws -> Credential {
         let nonce = randomNonce()
         let request = ASAuthorizationAppleIDProvider().createRequest()
         request.requestedScopes = [.fullName, .email]
         request.nonce = sha256(nonce)
         return try await withCheckedThrowingContinuation { continuation in
-            let coordinator = Coordinator(continuation: continuation, nonce: nonce)
+            let coordinator = Coordinator(continuation: continuation, nonce: nonce, anchor: anchor)
             let controller = ASAuthorizationController(authorizationRequests: [request])
             coordinator.controller = controller
             controller.delegate = coordinator
@@ -72,17 +72,35 @@ private final class Coordinator: NSObject, ASAuthorizationControllerDelegate, AS
     let id = UUID()
     let continuation: CheckedContinuation<AppleSignIn.Credential, Error>
     let nonce: String
+    weak var anchor: ASPresentationAnchor?
     var controller: ASAuthorizationController?
     private var resumed = false
 
-    init(continuation: CheckedContinuation<AppleSignIn.Credential, Error>, nonce: String) {
+    init(continuation: CheckedContinuation<AppleSignIn.Credential, Error>, nonce: String, anchor: ASPresentationAnchor?) {
         self.continuation = continuation
         self.nonce = nonce
+        self.anchor = anchor
     }
 
     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        return scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? ASPresentationAnchor()
+        if let anchor, !anchor.isHidden, anchor.bounds.width > 1, anchor.bounds.height > 1 {
+            return anchor
+        }
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .sorted { lhs, rhs in
+                let rank: (UIScene.ActivationState) -> Int = {
+                    switch $0 {
+                    case .foregroundActive: return 0
+                    case .foregroundInactive: return 1
+                    default: return 2
+                    }
+                }
+                return rank(lhs.activationState) < rank(rhs.activationState)
+            }
+            .flatMap(\.windows)
+            .filter { !$0.isHidden && $0.alpha > 0 && $0.bounds.width > 1 && $0.bounds.height > 1 }
+        return windows.first(where: \.isKeyWindow) ?? windows.first ?? UIWindow()
     }
 
     func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {

@@ -15,10 +15,16 @@ struct RootView: View {
                 Color.clear
                     .contentShape(Rectangle())
                     .ignoresSafeArea()
+                    .onTapGesture {
+                        session.dismissWait()
+                    }
             }
             if let toast = session.toast {
                 YoohooToast(text: toast, spinning: session.toastSpinning)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(session.toastSpinning
+                        ? .opacity.combined(with: .scale(scale: 0.92))
+                        : .move(edge: .top).combined(with: .opacity))
+                    .id((session.toastSpinning ? "wait-" : "tip-") + toast)
             }
         }
         .animation(.easeInOut(duration: 0.28), value: nav.stage)

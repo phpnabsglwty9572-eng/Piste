@@ -55,6 +55,7 @@ final class YoohooSession: ObservableObject {
     @Published var coverAsset = ""
     @Published var avatarAsset = ""
     @Published var h5Ready = false
+    @Published var darkStatusBar = false
 
     private let eulaKey = "yoohoo.eula"
     private let appleNamePrefix = "yoohoo.appleName."
@@ -69,6 +70,13 @@ final class YoohooSession: ObservableObject {
         self.blocksInput = blocksInput
         toastSpinning = true
         toast = "Please wait"
+    }
+
+    func dismissWait() {
+        guard busy, toastSpinning, toast == "Please wait" else { return }
+        toastSpinning = false
+        toast = nil
+        blocksInput = false
     }
 
     func stopLoading() {
@@ -119,7 +127,7 @@ final class YoohooSession: ObservableObject {
         if current.isEmpty || current == prefix || current.lowercased() == "apple" {
             let chosen = String(stored.prefix(YoohooConfig.nameLimit))
             try await YoohooBackend.saveProfile(id: me, name: chosen, avatar: avatarAsset.isEmpty ? nil : avatarAsset, cover: coverAsset.isEmpty ? nil : coverAsset)
-            await reload()
+            meName = chosen
         }
     }
 

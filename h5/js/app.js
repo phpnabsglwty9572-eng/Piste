@@ -11,6 +11,8 @@
     comments: [],
     follows: [],
     blocks: [],
+    blockRows: [],
+    blockOwners: {},
     likes: [],
     roomLikes: [],
     peopleOwner: "",
@@ -87,6 +89,21 @@
   var busy = false;
   var poller = 0;
   var callStream = null;
+  var lastViewportW = 0;
+  function syncViewport() {
+    var port = window.visualViewport;
+    var w = Math.round((port && port.width) || window.innerWidth || 0);
+    var h = Math.round((port && port.height) || window.innerHeight || 0);
+    document.documentElement.style.setProperty("--app-w", w + "px");
+    document.documentElement.style.setProperty("--app-h", h + "px");
+    if (lastViewportW && Math.abs(w - lastViewportW) > 48) {
+      stack.forEach(function (item) { item.node = null; });
+    }
+    lastViewportW = w;
+  }
+  syncViewport();
+  window.addEventListener("resize", syncViewport);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", syncViewport);
 
   function el(html) {
     var box = document.createElement("div");
@@ -109,17 +126,31 @@
     if (!raw || raw.indexOf("T") < 0) return "";
     return raw.split("T")[1].slice(0, 5);
   }
-  function blocked(id) { return state.blocks.indexOf(id) >= 0; }
+  function blocked(id) { return state.blocks.indexOf(String(id || "").toLowerCase()) >= 0; }
   function following(id) {
     id = String(id || "").toLowerCase();
-    var me = API.me();
+    var me = String(API.me() || "").toLowerCase();
     return state.follows.some(function (row) { return row.follower === me && row.followee === id; });
   }
   function rememberFollow(id, on) {
-    var me = API.me();
+    var me = String(API.me() || "").toLowerCase();
     id = String(id || "").toLowerCase();
     state.follows = state.follows.filter(function (row) { return !(row.follower === me && row.followee === id); });
     if (on) state.follows.push({ follower: me, followee: id });
+  }
+  function extraFollowKey() { return "yoohoo.follow.ai." + (API.me() || "anon"); }
+  function loadExtraFollows() {
+    var ids = [];
+    try { ids = JSON.parse(localStorage.getItem(extraFollowKey()) || "[]"); } catch (err) { ids = []; }
+    if (!Array.isArray(ids)) ids = [];
+    ids.forEach(function (id) { rememberFollow(id, true); });
+  }
+  function saveExtraFollows() {
+    var me = String(API.me() || "").toLowerCase();
+    var ids = state.follows.filter(function (row) {
+      return row.follower === me && isAI(row.followee);
+    }).map(function (row) { return row.followee; });
+    try { localStorage.setItem(extraFollowKey(), JSON.stringify(ids)); } catch (err) {}
   }
   function rememberLike(id, on) {
     id = String(id || "").toLowerCase();
@@ -151,6 +182,12 @@
       if (body.type === "keyboard") {
         state.kb = Number((body.payload && body.payload.height) || 0);
         document.documentElement.style.setProperty("--kb", state.kb + "px");
+        window.scrollTo(0, 0);
+        if (document.body) document.body.scrollTop = 0;
+        var app = document.getElementById("app");
+        if (app) app.scrollTop = 0;
+        var scroller = document.querySelector(".detail-body, .ai-body, .chat-thread");
+        if (scroller && state.kb > 0) scroller.scrollTop = scroller.scrollHeight;
       }
     });
     var env = Bridge.env();
@@ -158,6 +195,7 @@
     document.getElementById("app").addEventListener("click", onClick);
     bindChatSwipe();
     bindPullRefresh();
+    bindPostSwipe();
     document.getElementById("app").addEventListener("submit", onSubmit);
     document.getElementById("app").addEventListener("contextmenu", onHold);
     document.getElementById("app").addEventListener("input", onFormInput);
@@ -261,6 +299,7 @@
     var pinned = (Bridge.env().startRoute || "");
     var keepAuth = ["auth", "signin", "register", "register2"].indexOf(pinned) >= 0;
     var onAuth = state.route === "auth" || state.route === "signin" || state.route === "register" || state.route === "register2";
+    if (appleBusy) return;
     if (payload.signedIn && !keepAuth && onAuth) {
       reload().then(function () { stack = []; go("main"); }).catch(function () {});
     } else if (payload.signedIn && !state.ready && !onAuth) {
@@ -272,14 +311,46 @@
     }
   }
 
+  var feedJob = null;
   async function reload() {
-    try {
-      await loadFeed();
-    } finally {
-      state.ready = true;
-      applyRemembered();
-      draw();
-    }
+    if (feedJob) return feedJob;
+    feedJob = (async function () {
+      try {
+        await loadFeed();
+      } finally {
+        state.ready = true;
+        applyRemembered();
+        draw();
+      }
+    })();
+    try { await feedJob; }
+    finally { feedJob = null; }
+  }
+
+  function settleList(err) { return []; }
+
+  function takeBlocks(rows, owner) {
+    owner = String(owner || "").toLowerCase();
+    return (rows || []).map(function (row) {
+      return {
+        blocker: String(row.blocker || row.blocker_id || "").toLowerCase(),
+        blocked: String(row.blocked || row.blocked_id || "").toLowerCase()
+      };
+    }).filter(function (row) { return row.blocker && row.blocked && !goneUser(row.blocked) && (!owner || row.blocker === owner); });
+  }
+
+  async function ensureBlocks(owner) {
+    owner = String(owner || "").toLowerCase();
+    if (!owner || state.blockOwners[owner]) return;
+    state.blockOwners[owner] = 1;
+    var rows = [];
+    try { rows = await API.blocks(owner); } catch (err) { rows = []; }
+    var mine = String(API.me() || "").toLowerCase();
+    takeBlocks(rows, owner).forEach(function (row) {
+      var exists = state.blockRows.some(function (item) { return item.blocker === row.blocker && item.blocked === row.blocked; });
+      if (!exists) state.blockRows.push(row);
+    });
+    state.blocks = state.blockRows.filter(function (row) { return row.blocker === mine; }).map(function (row) { return row.blocked; });
   }
 
   async function loadFeed() {
@@ -308,24 +379,37 @@
       state.me = mine;
     }
     var me = API.me();
-    var posts = await API.posts(ids);
-    var rooms = await API.rooms(ids);
-    var comments = await API.comments(posts.map(function (p) { return p.id; }));
-    state.follows = (await API.follows() || []).map(function (row) {
+    var bag = await Promise.all([
+      API.posts(ids).catch(settleList),
+      API.rooms(ids).catch(settleList),
+      API.follows().catch(settleList),
+      API.blocks(me).catch(settleList),
+      API.likes().catch(settleList),
+      API.threads().catch(settleList),
+      API.hides().catch(settleList),
+      me ? API.aiLines().catch(settleList) : Promise.resolve([])
+    ]);
+    var posts = bag[0] || [];
+    var rooms = bag[1] || [];
+    var hidden = (bag[6] || []).map(function (row) { return String(row.thread_id || "").toLowerCase(); });
+    var threads = (bag[5] || []).filter(function (row) { return hidden.indexOf(String(row.id || "").toLowerCase()) < 0; });
+    var extra = await Promise.all([
+      API.comments(posts.map(function (p) { return p.id; })).catch(settleList),
+      API.messages(threads.map(function (row) { return row.id; })).catch(settleList)
+    ]);
+    var comments = extra[0] || [];
+    var messages = extra[1] || [];
+    state.follows = (bag[2] || []).map(function (row) {
       row.follower = String(row.follower || "").toLowerCase();
       row.followee = String(row.followee || "").toLowerCase();
       return row;
     }).filter(function (row) { return !goneUser(row.follower) && !goneUser(row.followee); });
-    state.blocks = (await API.blocks() || []).map(function (row) {
-      var mine = String(row.blocker || row.blocker_id || "").toLowerCase();
-      if (mine && mine !== String(API.me() || "").toLowerCase()) return "";
-      return String(row.blocked || row.blocked_id || "").toLowerCase();
-    }).filter(Boolean);
-    state.likes = (await API.likes()).map(function (row) { return row.post_id; });
-    var threads = await API.threads();
-    var hidden = (await API.hides()).map(function (row) { return String(row.thread_id || "").toLowerCase(); });
-    threads = threads.filter(function (row) { return hidden.indexOf(String(row.id || "").toLowerCase()) < 0; });
-    var messages = await API.messages(threads.map(function (row) { return row.id; }));
+    state.blockRows = takeBlocks(bag[3], me);
+    state.blockOwners = {};
+    if (me) state.blockOwners[String(me).toLowerCase()] = 1;
+    state.blocks = state.blockRows.map(function (row) { return row.blocked; });
+    loadExtraFollows();
+    state.likes = (bag[4] || []).map(function (row) { return row.post_id; });
     function lower(row, key) { if (row[key]) row[key] = String(row[key]).toLowerCase(); }
     posts.forEach(function (row) { lower(row, "author_id"); lower(row, "id"); });
     rooms.forEach(function (row) { lower(row, "owner_id"); lower(row, "id"); });
@@ -344,10 +428,7 @@
     if (me) {
       var saved = {};
       try { saved = JSON.parse(localStorage.getItem("yoohoo.ai." + me) || "{}"); } catch (err) { saved = {}; }
-      var server = [];
-      try {
-        server = (await API.aiLines() || []).map(function (row) { return { mine: row.mine, body: row.body }; });
-      } catch (err) { server = []; }
+      var server = (bag[7] || []).map(function (row) { return { mine: row.mine, body: row.body }; });
       state.aiBy = {};
       AI_ROLES.forEach(function (role, index) {
         var legacy = index === 0 ? "ai:pegu" : "ai:yoohoo";
@@ -425,13 +506,34 @@
   }
 
   var motion = "replace";
+  var incomingPage = null;
+  function stashPage() {
+    var item = snap();
+    var root = document.getElementById("app");
+    var current = root && root.querySelector(":scope > .page");
+    if (current) item.node = current;
+    stack.push(item);
+  }
+  function applySnap(item) {
+    Object.keys(item || {}).forEach(function (key) {
+      if (key === "node") return;
+      state[key] = item[key];
+    });
+  }
+  function cleanPage(node) {
+    if (!node) return node;
+    node.classList.remove("edge-under", "edge-top", "motion", "push", "back", "fade", "tab-in", "tab-in-left", "under", "pop", "tab-out", "tab-out-right");
+    node.style.transition = "";
+    node.style.transform = "";
+    return node;
+  }
   function go(route, extra) {
     var from = state.route;
     var fromAuth = ["auth", "signin", "register", "register2"].indexOf(state.route) >= 0;
     var toAuth = ["auth", "signin", "register", "register2"].indexOf(route) >= 0;
     if (route === "auth" || (route === "main" && fromAuth)) stack = [];
     else if (state.route !== route || extra) {
-      if (!(state.route === "main" && route === "main") && !toAuth) stack.push(snap());
+      if (!(state.route === "main" && route === "main") && !toAuth) stashPage();
     }
     if (state.route === "call" && route !== "call") {
       Bridge.ring(false);
@@ -446,6 +548,14 @@
     else if (toAuth || fromAuth) motion = "fade";
     else motion = "push";
     draw();
+    var owner = route === "profile" ? state.profile : (route === "people" ? state.peopleOwner : "");
+    if (owner && String(owner).toLowerCase() !== String(API.me() || "").toLowerCase()) {
+      ensureBlocks(owner).then(function () {
+        if (state.route !== route) return;
+        if (route === "profile") paintFollowCounts(owner);
+        else draw();
+      }).catch(function () {});
+    }
   }
 
   var edgeDrag = null;
@@ -462,21 +572,25 @@
     return saved;
   }
   function edgeRestore(saved) {
-    Object.keys(saved).forEach(function (key) { state[key] = saved[key]; });
+    applySnap(saved);
   }
   function beginEdge() {
     if (edgeDrag || !canEdgeBack()) return false;
     var root = document.getElementById("app");
     var current = root.querySelector(":scope > .page");
     if (!current) return false;
-    var saved = edgeBackup();
     var prev = stack.length ? stack[stack.length - 1] : null;
-    if (prev) edgeRestore(prev);
-    else state.route = API.me() ? "main" : "auth";
-    state.sheet = null;
-    state.preview = null;
-    var under = pageView();
-    edgeRestore(saved);
+    var under = prev && prev.node;
+    if (!under) {
+      var saved = edgeBackup();
+      if (prev) edgeRestore(prev);
+      else state.route = API.me() ? "main" : "auth";
+      state.sheet = null;
+      state.preview = null;
+      under = pageView();
+      edgeRestore(saved);
+    }
+    cleanPage(under);
     under.classList.add("page", "edge-under");
     current.classList.add("edge-top");
     under.style.transform = "translate3d(-28%,0,0)";
@@ -508,18 +622,28 @@
       edgeDrag = null;
       if (commit) {
         if (state.route === "call") { Bridge.ring(false); stopCamera(); }
+        var reused = false;
         if (stack.length) {
           var prev = stack.pop();
-          Object.keys(prev).forEach(function (key) { state[key] = prev[key]; });
+          applySnap(prev);
+          reused = prev.node === under;
         } else if (state.route !== "main" && state.route !== "auth") {
           state.route = API.me() ? "main" : "auth";
         }
         state.sheet = null;
         state.preview = null;
-        motion = "replace";
-        draw();
+        incomingPage = null;
+        cleanPage(under);
+        under.classList.add("page");
+        if (top.parentNode) top.remove();
+        if (reused) settlePage(true);
+        else {
+          motion = "replace";
+          draw();
+        }
         return;
       }
+      cleanPage(under);
       if (under.parentNode) under.remove();
       top.style.transition = "";
       top.style.transform = "";
@@ -556,7 +680,8 @@
     if (state.route === "call") { Bridge.ring(false); stopCamera(); }
     if (stack.length) {
       var prev = stack.pop();
-      Object.keys(prev).forEach(function (key) { state[key] = prev[key]; });
+      applySnap(prev);
+      incomingPage = prev.node || null;
       state.sheet = null;
       state.preview = null;
       motion = "pop";
@@ -575,7 +700,7 @@
     if (!layer || layer.getAttribute("data-closing") === "1") {
       state.sheet = null;
       motion = "replace";
-      draw();
+      drawSheet();
       return;
     }
     layer.setAttribute("data-closing", "1");
@@ -593,7 +718,7 @@
     setTimeout(function () {
       state.sheet = null;
       motion = "replace";
-      draw();
+      drawSheet();
     }, 270);
   }
 
@@ -631,10 +756,18 @@
     fresh.replaceWith(kept);
   }
 
+  var paintMode = "page";
+  function drawSheet() {
+    paintMode = "sheet";
+    draw();
+  }
+
   function draw() {
     if (edgeDrag) return;
     var root = document.getElementById("app");
     var kind = motion || "replace";
+    var mode = paintMode;
+    paintMode = "page";
     motion = "replace";
     document.documentElement.style.setProperty("--kb", (state.kb || 0) + "px");
     var previous = root.querySelector(":scope > .page");
@@ -644,9 +777,19 @@
       var oldScroll = previous.querySelector('.tab-pane[data-pane="' + state.tab + '"] .scroll') || previous.querySelector(".scroll");
       if (oldScroll) keptScroll = oldScroll.scrollTop;
     }
-    var next = pageView();
-    next.classList.add("page");
-    if (!previous || kind === "replace") {
+    var keepPage = mode === "sheet" && previous && kind === "replace";
+    var reused = false;
+    var next;
+    if (keepPage) next = previous;
+    else if (incomingPage) {
+      next = cleanPage(incomingPage);
+      incomingPage = null;
+      reused = true;
+    } else next = pageView();
+    if (!keepPage) next.classList.add("page");
+    if (keepPage) {
+      /* The list stays mounted so opening a sheet does not replay skeletons. */
+    } else if (!previous || kind === "replace") {
       if (previous && state.route === "live") {
         root.appendChild(next);
         adoptStage(next);
@@ -686,14 +829,6 @@
       var scroller = next.querySelector('.tab-pane[data-pane="' + state.tab + '"] .scroll') || next.querySelector(".scroll");
       if (scroller) scroller.scrollTop = keptScroll;
     }
-    var shopFrame = next.querySelector(".shop-frame");
-    var shopOn = next.querySelector(".pack.on");
-    if (shopFrame && shopOn) {
-      shopFrame.style.transition = "none";
-      shopFrame.style.transform = "translate(" + shopOn.offsetLeft + "px," + shopOn.offsetTop + "px)";
-      shopFrame.getBoundingClientRect();
-      shopFrame.style.transition = "";
-    }
     root.querySelectorAll(":scope > .sheet-layer, :scope > .preview").forEach(function (node) { node.remove(); });
     if (state.sheet) {
       var layer = sheetView();
@@ -711,15 +846,29 @@
         "</div>"
       ));
     }
+    settlePage(reused);
+  }
+
+  function settlePage(reused) {
+    var root = document.getElementById("app");
     startPoll();
     if (state.route === "call") startCamera();
     if (state.route === "live") startLive();
-    var thread = document.querySelector(".chat-thread");
-    var liveBox = document.querySelector(".live-chat");
-    if (thread) thread.scrollTop = thread.scrollHeight;
-    if (liveBox) liveBox.scrollTop = liveBox.scrollHeight;
-    watchPhotos(root);
+    if (!reused) {
+      var thread = document.querySelector(".chat-thread");
+      var liveBox = document.querySelector(".live-chat");
+      if (thread) thread.scrollTop = thread.scrollHeight;
+      if (liveBox) liveBox.scrollTop = liveBox.scrollHeight;
+      watchPhotos(root);
+    }
     startPostVideos(root);
+    syncChrome();
+    finishPull();
+  }
+
+  function syncChrome() {
+    var keepLight = state.route === "boot" || state.route === "auth" || state.route === "live";
+    Bridge.post("chrome", { dark: !keepLight });
   }
 
   function markPostVideo(video, playing) {
@@ -762,9 +911,13 @@
       if (img.dataset.wait === "1") return;
       if (img.classList.contains("frame") || img.classList.contains("tick") || img.classList.contains("edit")) return;
       var src = img.getAttribute("src") || "";
-      var avatar = img.classList.contains("av") || img.classList.contains("face") || !!img.closest(".people-row, .pegu-chip, .viewers");
+      var avatar = !img.closest(".pill-act") && (img.classList.contains("av") || img.classList.contains("face") || !!img.closest(".people-row, .pegu-chip, .viewers"));
       var remote = src.indexOf("/storage/") >= 0 || src.indexOf("supabase.co") >= 0;
       if (!avatar && !remote) return;
+      if (img.complete && img.naturalWidth) {
+        img.dataset.wait = "1";
+        return;
+      }
       img.dataset.wait = "1";
       img.classList.add("pending");
       var parent = img.parentElement;
@@ -917,15 +1070,13 @@
   }
 
   function mainView() {
-    var idx = { home: 0, post: 1, chat: 2 }[state.tab] || 0;
-    var shift = (-idx * 100 / 3) + "%";
     return el(
       '<div class="screen main-shell">' +
-        '<div class="tab-stage"><div class="tab-track" style="transform:translate3d(' + shift + ',0,0)">' +
-          '<div class="tab-pane" data-pane="home">' + homeList() + "</div>" +
-          '<div class="tab-pane" data-pane="post">' + postList() + "</div>" +
-          '<div class="tab-pane" data-pane="chat">' + chatList() + "</div>" +
-        "</div></div>" +
+        '<div class="tab-stage">' +
+          '<div class="tab-pane' + (state.tab === "home" ? " on" : "") + '" data-pane="home">' + homeList() + "</div>" +
+          '<div class="tab-pane' + (state.tab === "post" ? " on" : "") + '" data-pane="post">' + postList() + "</div>" +
+          '<div class="tab-pane' + (state.tab === "chat" ? " on" : "") + '" data-pane="chat">' + chatList() + "</div>" +
+        "</div>" +
         '<div class="tabs">' +
           tabBtn("home", "home", "TabHome.png", "TabHomeOff.png") +
           tabBtn("post", "post", "TabPostOn.png", "TabPost.png") +
@@ -939,12 +1090,17 @@
     return '<button class="tab' + (selected ? " on" : "") + '" data-act="tab" data-id="' + id + '" data-on="' + on + '" data-off="' + off + '">' +
       '<span class="icon"><img src="img/' + (selected ? on : off) + '" alt="" /></span>' + label + "</button>";
   }
-  function slideTabs(animate) {
-    var track = document.querySelector(".tab-track");
-    if (!track) return false;
-    var idx = { home: 0, post: 1, chat: 2 }[state.tab] || 0;
-    track.style.transition = animate ? "transform .34s cubic-bezier(0.32, 0.72, 0, 1)" : "none";
-    track.style.transform = "translate3d(" + (-idx * 100 / 3) + "%,0,0)";
+  function slideTabs() {
+    var panes = document.querySelectorAll(".tab-pane");
+    if (!panes.length) return false;
+    panes.forEach(function (pane) {
+      var on = pane.getAttribute("data-pane") === state.tab;
+      pane.classList.remove("on");
+      if (on) {
+        void pane.offsetWidth;
+        pane.classList.add("on");
+      }
+    });
     document.querySelectorAll(".tabs .tab").forEach(function (btn) {
       var on = btn.getAttribute("data-id") === state.tab;
       btn.classList.toggle("on", on);
@@ -957,8 +1113,7 @@
   function homeList() {
     var me = state.profiles[API.me()] || state.me || {};
     var face = me.avatar_url || fileURL(API.me(), "avatar.jpg") || "img/AIUserFace.png";
-    var cards = state.rooms.map(homeCard).join("");
-    var empty = emptyPen();
+    var cards = !state.ready ? skeletonCards("live") : (state.rooms.map(homeCard).join("") || emptyPen());
     return '<div class="scroll">' +
       '<div class="home-head">' +
         '<img class="home-sky" src="img/HomeSky.png" alt="" />' +
@@ -977,7 +1132,17 @@
             '<img class="edit" src="img/EditBadge.svg" alt="" />' +
           "</button>" +
         "</div></div>" +
-      '<div class="home-feed">' + (cards || empty) + "</div></div>";
+      '<div class="home-feed home-list">' + cards + "</div></div>";
+  }
+
+  function liveBadge() {
+    return '<div class="live-badge"><svg class="live-glyph" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">' +
+      '<path fill="#FFE412" d="M15.6667 3.11111C15.8855 3.11111 16.1023 3.15422 16.3045 3.23798C16.5067 3.32174 16.6904 3.4445 16.8452 3.59927C16.9999 3.75403 17.1227 3.93776 17.2065 4.13997C17.2902 4.34218 17.3333 4.55891 17.3333 4.77778V12.4444C17.3333 12.6633 17.2902 12.88 17.2065 13.0823C17.1227 13.2845 16.9999 13.4682 16.8452 13.623C16.6904 13.7777 16.5067 13.9005 16.3045 13.9842C16.1023 14.068 15.8855 14.1111 15.6667 14.1111H11.28L14.0656 16.8911C14.1653 16.9913 14.2231 17.1258 14.2271 17.2671C14.2311 17.4085 14.1812 17.546 14.0873 17.6518C13.9934 17.7575 13.8628 17.8235 13.722 17.8363C13.5812 17.8491 13.4408 17.8077 13.3294 17.7206L13.2811 17.6778L9.99944 14.4028L6.71889 17.6778C6.62252 17.7739 6.49421 17.8313 6.35831 17.8391C6.22241 17.8469 6.08838 17.8045 5.98167 17.72L5.93333 17.6767C5.8372 17.5803 5.7798 17.452 5.77201 17.3161C5.76423 17.1802 5.80661 17.0462 5.89111 16.9394L5.93444 16.8911L8.71944 14.1111H4.33333C3.90822 14.1111 3.49916 13.9487 3.18986 13.6571C2.88055 13.3654 2.69438 12.9666 2.66944 12.5422L2.66667 12.4444V4.77778C2.66667 4.55891 2.70978 4.34218 2.79353 4.13997C2.87729 3.93776 3.00006 3.75403 3.15482 3.59927C3.30959 3.4445 3.49332 3.32174 3.69553 3.23798C3.89774 3.15422 4.11446 3.11111 4.33333 3.11111H15.6667ZM15.6667 4.22222H4.33333C4.26038 4.22222 4.18813 4.23659 4.12073 4.26451C4.05333 4.29243 3.99208 4.33335 3.9405 4.38494C3.88891 4.43653 3.84799 4.49777 3.82007 4.56518C3.79215 4.63258 3.77778 4.70482 3.77778 4.77778V12.4444C3.77778 12.5174 3.79215 12.5896 3.82007 12.657C3.84799 12.7244 3.88891 12.7857 3.9405 12.8373C3.99208 12.8889 4.05333 12.9298 4.12073 12.9577C4.18813 12.9856 4.26038 13 4.33333 13H15.6667C15.7396 13 15.8119 12.9856 15.8793 12.9577C15.9467 12.9298 16.0079 12.8889 16.0595 12.8373C16.1111 12.7857 16.152 12.7244 16.1799 12.657C16.2079 12.5896 16.2222 12.5174 16.2222 12.4444V4.77778C16.2222 4.70482 16.2079 4.63258 16.1799 4.56518C16.152 4.49777 16.1111 4.43653 16.0595 4.38494C16.0079 4.33335 15.9467 4.29243 15.8793 4.26451C15.8119 4.23659 15.7396 4.22222 15.6667 4.22222Z"/>' +
+      '<path class="bar b1" fill="#FFE412" d="M6.66556 7.72556C6.80172 7.72559 6.93312 7.77562 7.03482 7.86616C7.13652 7.9567 7.20143 8.08143 7.21722 8.21667L7.22111 8.28111V10.5033C7.22095 10.6449 7.16673 10.7811 7.06953 10.8841C6.97232 10.9871 6.83947 11.049 6.69811 11.0573C6.55676 11.0656 6.41757 11.0196 6.30898 10.9287C6.2004 10.8379 6.13061 10.7089 6.11389 10.5683L6.11 10.5033V8.28111C6.11 8.20815 6.12437 8.13591 6.15229 8.06851C6.18021 8.00111 6.22113 7.93986 6.27272 7.88827C6.32431 7.83669 6.38555 7.79576 6.45295 7.76784C6.52036 7.73993 6.5926 7.72556 6.66556 7.72556Z"/>' +
+      '<path class="bar b2" fill="#FFE412" d="M8.88778 6.05889C9.02394 6.05892 9.15534 6.10896 9.25704 6.19949C9.35874 6.29003 9.42365 6.41476 9.43944 6.55L9.44333 6.61444V10.5033C9.44318 10.6449 9.38896 10.7811 9.29175 10.8841C9.19455 10.9871 9.06169 11.049 8.92034 11.0573C8.77898 11.0656 8.63979 11.0196 8.5312 10.9287C8.42262 10.8379 8.35284 10.7089 8.33611 10.5683L8.33222 10.5033V6.61444C8.33222 6.54149 8.34659 6.46925 8.37451 6.40184C8.40243 6.33444 8.44335 6.2732 8.49494 6.22161C8.54653 6.17002 8.60777 6.1291 8.67518 6.10118C8.74258 6.07326 8.81482 6.05889 8.88778 6.05889Z"/>' +
+      '<path class="bar b3" fill="#FFE412" d="M11.11 7.17C11.2462 7.17003 11.3776 7.22007 11.4793 7.31061C11.581 7.40114 11.6459 7.52587 11.6617 7.66111L11.6656 7.72556V10.5033C11.6654 10.6449 11.6112 10.7811 11.514 10.8841C11.4168 10.9871 11.2839 11.049 11.1426 11.0573C11.0012 11.0656 10.862 11.0196 10.7534 10.9287C10.6448 10.8379 10.5751 10.7089 10.5583 10.5683L10.5544 10.5033V7.72556C10.5544 7.57821 10.613 7.43691 10.7172 7.33272C10.8213 7.22853 10.9627 7.17 11.11 7.17Z"/>' +
+      '<path class="bar b4" fill="#FFE412" d="M13.3333 6.61444C13.4695 6.61448 13.6009 6.66451 13.7026 6.75505C13.8043 6.84558 13.8692 6.97032 13.885 7.10556L13.8889 7.17056L13.8867 10.5039C13.8862 10.6454 13.8318 10.7814 13.7345 10.8842C13.6372 10.9869 13.5044 11.0487 13.3631 11.0568C13.2218 11.065 13.0828 11.0189 12.9743 10.928C12.8659 10.8371 12.7962 10.7083 12.7794 10.5678L12.7756 10.5033L12.7778 7.17C12.7778 7.09704 12.7921 7.0248 12.8201 6.9574C12.848 6.89 12.8889 6.82875 12.9405 6.77716C12.9921 6.72558 13.0533 6.68465 13.1207 6.65673C13.1881 6.62881 13.2604 6.61444 13.3333 6.61444Z"/>' +
+    "</svg>Live</div>";
   }
 
   function homeCard(room) {
@@ -988,9 +1153,9 @@
     var loved = roomLiked(room.id);
     var split = splitTags(room.title || "");
     return '<article class="live-card">' +
-      '<div class="live-photo">' +
+      '<div class="live-photo" data-act="live" data-id="' + room.id + '">' +
         '<img class="stage" src="' + esc(photo) + '" alt="" />' +
-        '<div class="live-badge"><img src="img/LiveGlyph.svg" alt="" />Live</div>' +
+        liveBadge() +
         '<button class="play" data-act="live" data-id="' + room.id + '"><img src="img/PlayButton.svg" alt="" /></button>' +
         '<div class="live-bar">' +
           '<div class="author">' +
@@ -1082,6 +1247,22 @@
     return { caption: words.join(" "), tags: tags };
   }
 
+  function skeletonCards(kind) {
+    var photo = kind === "post" ? " tall" : "";
+    var card = '<article class="live-card skel"><div class="live-photo' + photo + ' skel-block"></div><div class="skel-line"></div><div class="skel-tags"><i></i><i></i></div></article>';
+    return card + card;
+  }
+
+  function skeletonRows() {
+    return '<div class="skel-row"><i></i><span><b class="wide"></b><b class="short"></b></span></div>' +
+      '<div class="skel-row"><i></i><span><b class="wide"></b><b class="short"></b></span></div>' +
+      '<div class="skel-row"><i></i><span><b class="wide"></b><b class="short"></b></span></div>';
+  }
+
+  function skeletonFriends() {
+    return '<div class="friend-row skel-friends"><i></i><i></i><i></i><i></i></div>';
+  }
+
   function emptyPen(size) {
     var note = state.ready
       ? '<span class="msg">No data</span>'
@@ -1099,18 +1280,21 @@
       '<img class="man" src="img/PillSnowman.svg" alt="" /></button>';
   }
 
-  function postList() {
+  function postRows(filter) {
+    if (!state.ready) return skeletonCards("post");
     var mine = API.me();
-    var rows = state.posts;
-    if (state.postFilter === "followed") {
-      rows = rows.filter(function (post) { return following(post.author_id) || post.author_id === mine; });
-    }
-    var cards = rows.map(postCard).join("");
-    var empty = emptyPen();
+    var rows = state.posts.filter(function (post) {
+      if (filter !== "followed") return true;
+      return following(post.author_id) || post.author_id === mine;
+    });
+    return rows.map(postCard).join("") || emptyPen();
+  }
+
+  function postList() {
+    var shift = state.postFilter === "followed" ? "-50%" : "0";
     return '<div class="feed-page">' +
       '<div class="feed-head">' +
         '<img class="form-sky" src="img/FormSky.png" alt="" />' +
-        '<button class="form-back" data-act="tab" data-id="home"><img src="img/BackButton.svg" alt="" /></button>' +
         '<div class="form-title">Post</div>' +
         '<button class="post-chip" data-act="go" data-to="compose"><img class="badge" src="img/PostBadge.png" alt="" /><span>POST</span><img class="pen" src="img/Pencil.svg" alt="" /></button>' +
         '<div class="post-pills">' +
@@ -1120,7 +1304,10 @@
         '<img class="form-snow" src="img/SnowHem.png" alt="" />' +
         '<img class="form-sled" src="img/SledMark.png" alt="" />' +
       "</div>" +
-      '<div class="scroll home-feed">' + (cards || empty) + "</div></div>";
+      '<div class="post-stage"><div class="post-track" style="transform:translate3d(' + shift + ',0,0)">' +
+        '<div class="post-pane scroll"><div class="home-feed">' + postRows("popular") + "</div></div>" +
+        '<div class="post-pane scroll"><div class="home-feed">' + postRows("followed") + "</div></div>" +
+      "</div></div></div>";
   }
 
   function postCard(post) {
@@ -1206,16 +1393,14 @@
     return '<div class="feed-page">' +
       '<div class="feed-head short">' +
         '<img class="form-sky" src="img/FormSky.png" alt="" />' +
-        '<button class="form-back" data-act="tab" data-id="home"><img src="img/BackButton.svg" alt="" /></button>' +
         '<div class="form-title">Chat</div>' +
         '<button class="gem-chip" data-act="go" data-to="shop"><img src="img/Coin5.png" alt="" /><span>' + gems + '</span><img class="plus" src="img/CoinPlus.svg" alt="" /></button>' +
         '<img class="form-snow" src="img/SnowHem.png" alt="" />' +
         '<img class="form-sled" src="img/SledMark.png" alt="" />' +
       "</div>" +
       '<div class="scroll chat-body">' +
-        (chips ? '<div class="friend-row">' + chips + "</div>" : "") +
-        '<div class="form-label"><img src="img/FieldBell.png" alt="" />All Chat</div>' +
-        (rows || emptyPen()) +
+        (!state.ready && !chips ? skeletonFriends() : (chips ? '<div class="friend-row">' + chips + "</div>" : "")) +
+        (!state.ready ? '<div class="form-label"><img src="img/FieldBell.png" alt="" />All Chat</div>' + skeletonRows() : (rows ? '<div class="form-label"><img src="img/FieldBell.png" alt="" />All Chat</div>' + rows : emptyPen())) +
       "</div></div>";
   }
 
@@ -1416,7 +1601,7 @@
     return el(
       '<div class="live-room">' +
         stage +
-        '<div class="live-badge"><img src="img/LiveGlyph.svg" alt="" />Live</div>' +
+        liveBadge() +
         '<div class="viewers">' + faces +
           '<span class="count" data-act="audience">' + crowd.total + "</span></div>" +
         (user.name ? '<div class="host">' +
@@ -1430,7 +1615,7 @@
           '<label class="say"><img src="img/CommentSend.svg" alt="" /><input name="body" placeholder="Please enter..." /></label>' +
           '<button class="sq gift-btn" type="button" data-act="gift"><img src="img/LiveGift.png" alt="" /></button>' +
           '<button class="sq" type="button" data-act="about-person" data-id="' + room.owner_id + '"><img src="img/MoreCircle.svg" alt="" /></button>' +
-          '<button class="sq" type="button" data-act="back"><img src="img/LiveShare.svg" alt="" /></button>' +
+          '<button class="sq" type="button" data-act="back"><img src="img/LiveClose.svg" alt="" /></button>' +
         "</form>" +
         (state.gift ? giftFxHTML() : "") +
       "</div>"
@@ -1458,9 +1643,9 @@
           '<img class="form-sled" src="img/SledMark.png" alt="" />' +
         "</div>" +
         '<div class="scroll detail-body">' +
-          (post ? postCard(post) : "") +
+          (!state.ready && !post ? skeletonCards("post") : (post ? postCard(post) : "")) +
           '<div class="form-label"><img src="img/FieldBell.png" alt="" />Comment</div>' +
-          (comments || empty) +
+          (!state.ready ? skeletonRows() : (comments || empty)) +
         "</div>" +
         '<form class="pink-enter" data-form="comment"><img src="img/CommentSend.svg" alt="" /><input name="body" placeholder="Please enter..." enterkeyhint="send" /></form>' +
       "</div>"
@@ -1521,7 +1706,7 @@
           '<img class="form-snow" src="img/SnowHem.png" alt="" />' +
           '<img class="form-sled" src="img/SledMark.png" alt="" />' +
         "</div>" +
-        '<div class="scroll chat-thread">' + (lines || emptyPen()) + "</div>" +
+        '<div class="scroll chat-thread">' + (!state.ready && !lines ? skeletonRows() : (lines || emptyPen())) + "</div>" +
         '<form class="chat-enter" data-form="chat">' +
           '<label class="pink-enter tight"><img src="img/CommentSend.svg" alt="" /><input name="body" placeholder="Please enter..." /></label>' +
           '<button class="sq blue" type="button" data-act="call"><img src="img/ChatNow.png" alt="" /></button>' +
@@ -1593,12 +1778,8 @@
     );
   }
 
-  function profileView() {
-    var id = state.profile || API.me();
-    var user = state.profiles[id] || state.me || {};
-    var mine = id && id === API.me();
-    var face = user.avatar_url || remembered("avatar", id) || fileURL(id, "avatar.jpg");
-    var coverURL = user.cover_url || remembered("cover", id) || fileURL(id, "cover.jpg") || "img/AuthSky.png";
+  function profileCards(id) {
+    id = id || state.profile || API.me();
     var posts = state.posts.filter(function (row) {
       if (state.profileTab === "like") return state.likes.indexOf(String(row.id).toLowerCase()) >= 0;
       return row.author_id === id;
@@ -1607,7 +1788,15 @@
       ? state.rooms.filter(function (room) { return roomLiked(room.id); })
       : [];
     var cards = rooms.map(homeCard).join("") + posts.map(postCard).join("");
-    var empty = emptyPen();
+    return !state.ready ? skeletonCards("post") : (cards || emptyPen());
+  }
+
+  function profileView() {
+    var id = state.profile || API.me();
+    var user = state.profiles[id] || state.me || {};
+    var mine = id && id === API.me();
+    var face = user.avatar_url || remembered("avatar", id) || fileURL(id, "avatar.jpg");
+    var coverURL = user.cover_url || remembered("cover", id) || fileURL(id, "cover.jpg") || "img/AuthSky.png";
     return el(
       '<div class="form-page profile-page">' +
         '<div class="prof-bar">' +
@@ -1642,13 +1831,13 @@
           '<div class="prof-stats">' +
             '<button data-act="people" data-id="follow"><b>' + followCount(id, true) + "</b><span>Followed</span></button>" +
             '<button data-act="people" data-id="fans"><b>' + followCount(id, false) + "</b><span>Fans</span></button>" +
-            '<button data-act="people" data-id="block"><b>' + (mine ? state.blocks.length : 0) + "</b><span>Blacklist</span></button>" +
+            '<button data-act="people" data-id="block"><b>' + relationIds(id, "block").length + "</b><span>Blacklist</span></button>" +
           "</div>" +
           '<div class="post-pills prof-pills">' +
             '<button class="pill pink' + (state.profileTab === "post" ? " on" : "") + '" data-act="profile-tab" data-id="post"><img class="flake" src="img/SnowmanBody.svg" alt="" /><span>Post</span><img class="man" src="img/PillSnowman.svg" alt="" /></button>' +
             '<button class="pill gray' + (state.profileTab === "like" ? " on" : "") + '" data-act="profile-tab" data-id="like"><img class="flake" src="img/SnowmanBody.svg" alt="" /><span>Like</span><img class="man" src="img/PillSnowman.svg" alt="" /></button>' +
           "</div>" +
-          (cards || empty) +
+          '<div class="prof-cards">' + profileCards(id) + "</div>" +
         "</div></div></div>"
     );
   }
@@ -1664,10 +1853,11 @@
       ids.push(id);
     }
     if (kind === "block") {
-      state.blocks.forEach(add);
+      (state.blockRows || []).forEach(function (row) {
+        if (String(row.blocker || "").toLowerCase() === owner) add(row.blocked);
+      });
       return ids;
     }
-    AI_ROLES.forEach(function (role) { add(role.id); });
     state.follows.forEach(function (row) {
       var follower = String(row.follower || "").toLowerCase();
       var followee = String(row.followee || "").toLowerCase();
@@ -1705,15 +1895,17 @@
   }
 
   function shopView() {
-    var arts = ["Coin5.png", "Coin10.png", "Coin15.png", "Coin20.png", "Coin25.png", "Coin30.png", "Coin35.png"];
+    var arts = ["CoinArt1.png", "CoinArt2.png", "CoinArt3.png", "CoinArt4.png", "CoinArt5.png", "CoinArt6.png", "CoinArt7.png", "CoinArt8.png"];
     var picked = state.shopPick || 0;
-    var packs = (Bridge.env().packs || []).map(function (pack, i) {
+    var packs = (Bridge.env().packs || []).slice().sort(function (a, b) {
+      return Number(a.amount) - Number(b.amount);
+    }).map(function (pack, i) {
+      var art = i < 8 ? arts[i] : arts[7];
       return '<button class="pack' + (i === picked ? " on" : "") + '" data-act="buy" data-id="' + esc(pack.id) + '">' +
-        '<img class="art" src="img/' + arts[i] + '" alt="" />' +
+        '<img class="art" src="img/' + art + '" alt="" />' +
         '<div class="meta"><img src="img/Coin5.png" alt="" /><span>' + pack.amount + "</span></div>" +
         '<span class="price">' + esc(pack.price) + "</span></button>";
     }).join("");
-    packs = '<div class="shop-frame"></div>' + packs;
     return el(
       '<div class="form-page shop-page">' +
         '<div class="shop-head">' +
@@ -1758,29 +1950,37 @@
     );
   }
 
+  function personLabel(id, user, role) {
+    if (role) return { name: role.name || "User", handle: role.handle || "", face: role.avatar || "img/SampleAvatar.png" };
+    var row = user || {};
+    var name = String(row.name || "").trim();
+    var handle = String(row.handle || "").trim();
+    if (!name || name.toLowerCase() === String(id || "").toLowerCase() || /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(name)) name = "User";
+    if (handle && handle.charAt(0) !== "@") handle = "@" + handle;
+    if (handle.toLowerCase() === "@" + String(id || "").toLowerCase()) handle = "";
+    return { name: name, handle: handle, face: row.avatar_url || "img/SampleAvatar.png" };
+  }
+
   function peopleView() {
     var kind = state.peopleKind;
     var owner = String(state.peopleOwner || API.me() || "").toLowerCase();
     var ids = relationIds(owner, kind);
+    var mineList = owner === String(API.me() || "").toLowerCase();
     var title = kind === "fans" ? "Fans" : "Followed";
-    var back = kind === "block" ? "settings" : "profile";
+    var back = kind === "block" && mineList ? "settings" : "profile";
     var rows = ids.map(function (id) {
       var role = aiRole(id);
-      var user = role || state.profiles[id] || { name: id };
-      var face = role ? role.avatar : (user.avatar_url || "img/SampleAvatar.png");
-      var name = role ? role.name : (user.name || "");
-      var handle = role ? role.handle : (user.handle || "");
+      var label = personLabel(id, state.profiles[id], role);
       var action = "";
-      if (kind === "block") action = '<button class="pill-act gray" data-act="unblock" data-id="' + id + '">Remove</button>';
-      else if (kind === "fans" && !following(id)) action = '<button class="pill-act blue" data-act="follow" data-id="' + id + '">Follow<img src="img/BadgePlus.png" alt="" /></button>';
-      else action = '<button class="pill-act gray" data-act="follow" data-id="' + id + '">Followed</button>';
+      if (kind === "block") action = mineList ? '<button class="pill-act gray" type="button" data-act="unblock" data-id="' + id + '"><span>Remove</span></button>' : "";
+      else action = followButton(id, following(id));
       var open = role ? "open-chat" : "profile";
-      return '<div class="people-row"><img src="' + esc(face) + '" alt="" data-act="profile" data-id="' + id + '" />' +
-        '<div class="meta" data-act="' + open + '" data-id="' + id + '"><b>' + esc(name) + "</b><span>" + esc(handle) + "</span></div>" + action + "</div>";
+      return '<div class="people-row"><img src="' + esc(label.face) + '" alt="" data-act="profile" data-id="' + id + '" />' +
+        '<div class="meta" data-act="' + open + '" data-id="' + id + '"><b>' + esc(label.name) + "</b><span>" + esc(label.handle) + "</span></div>" + action + "</div>";
     }).join("");
     return el(
       '<div class="form-page">' + formChrome(title, back) +
-        '<div class="scroll people-list">' + (rows || emptyPen()) + "</div></div>"
+        '<div class="scroll people-list">' + (!state.ready ? skeletonRows() : (rows || emptyPen())) + "</div></div>"
     );
   }
 
@@ -1898,15 +2098,14 @@
   function audienceRows() {
     var ids = roomCrowd(state.live).ids.filter(function (id) { return !isAI(id); });
     var rows = ids.map(function (id) {
-      var user = state.profiles[id] || {};
+      var label = personLabel(id, state.profiles[id], aiRole(id));
       var followed = following(id);
-      return '<div class="people-row"><img src="' + esc(user.avatar_url || "img/SampleAvatar.png") + '" alt="" data-act="profile" data-id="' + id + '" />' +
-        '<div class="meta" data-act="profile" data-id="' + id + '"><b>' + esc(user.name || "") + "</b><span>" + esc(user.handle || "") + "</span></div>" +
-        (id === API.me() ? "" : followed
-          ? '<button class="pill-act gray" data-act="follow" data-id="' + id + '">Followed</button>'
-          : '<button class="pill-act blue" data-act="follow" data-id="' + id + '">Follow<img src="img/BadgePlus.png" alt="" /></button>') +
+      return '<div class="people-row"><img src="' + esc(label.face) + '" alt="" data-act="profile" data-id="' + id + '" />' +
+        '<div class="meta" data-act="profile" data-id="' + id + '"><b>' + esc(label.name) + "</b><span>" + esc(label.handle) + "</span></div>" +
+        (id === API.me() ? "" : followButton(id, followed)) +
         "</div>";
     }).join("");
+    if (state.audienceLoading) return skeletonRows();
     return rows || emptyPen();
   }
 
@@ -1915,8 +2114,149 @@
     return n ? n - 1 : 0;
   }
 
+  function setPostFilter(id, animate) {
+    if (id !== "popular" && id !== "followed") return;
+    state.postFilter = id;
+    document.querySelectorAll(".post-pills .pill").forEach(function (pill) {
+      pill.classList.toggle("on", pill.getAttribute("data-id") === id);
+    });
+    var track = document.querySelector(".post-track");
+    if (!track) return;
+    track.style.transition = animate ? "transform .28s cubic-bezier(0.32, 0.72, 0, 1)" : "none";
+    track.style.transform = "translate3d(" + (id === "followed" ? "-50%" : "0") + ",0,0)";
+  }
+
+  function bindPostSwipe() {
+    var drag = { x: 0, y: 0, dx: 0, axis: "", track: null };
+    var root = document.getElementById("app");
+    root.addEventListener("touchstart", function (event) {
+      var stage = event.target.closest(".post-stage");
+      var track = stage && stage.querySelector(".post-track");
+      if (!track || !event.touches[0] || state.route !== "main" || state.tab !== "post") return;
+      drag.track = track;
+      drag.x = event.touches[0].clientX;
+      drag.y = event.touches[0].clientY;
+      drag.dx = 0;
+      drag.axis = "";
+    }, { passive: true });
+    root.addEventListener("touchmove", function (event) {
+      if (!drag.track || !event.touches[0]) return;
+      var dx = event.touches[0].clientX - drag.x;
+      var dy = event.touches[0].clientY - drag.y;
+      if (!drag.axis && (Math.abs(dx) >= 12 || Math.abs(dy) >= 12)) drag.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      if (drag.axis !== "x") return;
+      drag.dx = dx;
+      var width = drag.track.parentElement.clientWidth || 1;
+      var base = state.postFilter === "followed" ? -width : 0;
+      var next = Math.max(-width, Math.min(0, base + dx));
+      drag.track.style.transition = "none";
+      drag.track.style.transform = "translate3d(" + next + "px,0,0)";
+    }, { passive: true });
+    root.addEventListener("touchend", function () {
+      var axis = drag.axis;
+      var dx = drag.dx;
+      drag.track = null;
+      if (axis !== "x") return;
+      var next = state.postFilter;
+      if (dx <= -48) next = "followed";
+      else if (dx >= 48) next = "popular";
+      setPostFilter(next, true);
+    });
+  }
+
   var chatDrag = { row: null, x: 0, y: 0, dx: 0, moved: false, axis: "" };
-  var pullRefresh = { scroller: null, y: 0, dy: 0, arm: false, loading: false };
+  var pullRefresh = { scroller: null, y: 0, dy: 0, arm: false, loading: false, release: false, hold: 0 };
+
+  function followButton(id, on) {
+    return '<button class="pill-act ' + (on ? "gray" : "blue") + '" type="button" data-act="follow" data-id="' + id + '"><span>' +
+      (on ? "Followed" : "Follow") +
+      (on ? "" : '<img src="img/BadgePlus.png" alt="" />') +
+      "</span></button>";
+  }
+
+  function sameId(node, id) {
+    return String((node && node.getAttribute("data-id")) || "").toLowerCase() === String(id || "").toLowerCase();
+  }
+
+  function paintHeart(act, target, on) {
+    var src = on ? "img/LikeOnGlyph.svg" : "img/LikeGlyph.svg";
+    document.querySelectorAll('[data-act="' + act + '"]').forEach(function (btn) {
+      if (!sameId(btn, target)) return;
+      var icon = btn.querySelector("img");
+      if (icon) icon.src = src;
+    });
+  }
+
+  function restoreCardFollow(who) {
+    document.querySelectorAll(".live-card .author, .host").forEach(function (row) {
+      var owner = row.querySelector("[data-id]");
+      if (!sameId(owner, who)) return;
+      if (row.querySelector('[data-act="follow"]')) return;
+      row.appendChild(el('<button class="plus" data-act="follow" data-id="' + who + '"><img src="img/BadgePlus.png" alt="" /></button>'));
+    });
+  }
+
+  function paintFollow(who, on) {
+    document.querySelectorAll('[data-act="follow"]').forEach(function (btn) {
+      if (!sameId(btn, who)) return;
+      if (btn.classList.contains("pill-act")) {
+        btn.className = "pill-act " + (on ? "gray" : "blue");
+        btn.innerHTML = "<span>" + (on ? "Followed" : "Follow") + (on ? "" : '<img src="img/BadgePlus.png" alt="" />') + "</span>";
+        return;
+      }
+      if (btn.classList.contains("edit")) {
+        btn.classList.toggle("on", on);
+        var mark = btn.querySelector("img");
+        if (mark) mark.src = on ? "img/FollowedGlyph.svg" : "img/BadgePlus.png";
+        return;
+      }
+      if (btn.closest(".author") || btn.closest(".host")) {
+        if (on) btn.remove();
+        return;
+      }
+      var icon = btn.querySelector("img");
+      if (icon) icon.src = on ? "img/FollowedGlyph.svg" : "img/BadgePlus.png";
+    });
+    if (!on) restoreCardFollow(who);
+    paintFollowCounts();
+  }
+
+  function paintFollowCounts(owner) {
+    var stats = document.querySelector(".prof-stats");
+    if (!stats) return;
+    owner = String(owner || state.profile || API.me() || "").toLowerCase();
+    var buttons = stats.querySelectorAll("button");
+    var values = [followCount(owner, true), followCount(owner, false), relationIds(owner, "block").length];
+    values.forEach(function (value, i) {
+      var num = buttons[i] && buttons[i].querySelector("b");
+      if (num) num.textContent = value;
+    });
+  }
+
+  function finishPull() {
+    if (!pullRefresh.release) return;
+    var height = pullRefresh.hold || 56;
+    pullRefresh.release = false;
+    pullRefresh.hold = 0;
+    pullRefresh.loading = false;
+    var panes = document.querySelectorAll(".tab-pane.on .post-pane");
+    var host = panes.length
+      ? panes[state.postFilter === "followed" ? 1 : 0]
+      : document.querySelector(".tab-pane.on .scroll");
+    if (!host) return;
+    var bounce = document.createElement("div");
+    bounce.className = "pull-refresh spin";
+    bounce.innerHTML = "<i></i>";
+    bounce.style.height = height + "px";
+    host.insertBefore(bounce, host.firstChild);
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        bounce.classList.add("settle");
+        bounce.style.height = "0px";
+      });
+    });
+    setTimeout(function () { if (bounce.parentNode) bounce.remove(); }, 720);
+  }
   function bindPullRefresh() {
     var root = document.getElementById("app");
     root.addEventListener("touchstart", function (event) {
@@ -1924,7 +2264,13 @@
       var scroller = event.target.closest(".tab-pane .scroll");
       if (!scroller) {
         var head = event.target.closest(".feed-head");
-        if (head && head.parentElement) scroller = head.parentElement.querySelector(":scope > .scroll");
+        if (head && head.parentElement) {
+          scroller = head.parentElement.querySelector(":scope > .scroll");
+          if (!scroller) {
+            var panes = head.parentElement.querySelectorAll(".post-pane");
+            scroller = panes[state.postFilter === "followed" ? 1 : 0] || null;
+          }
+        }
       }
       if (!scroller || scroller.scrollTop > 1) return;
       pullRefresh.scroller = scroller;
@@ -1960,18 +2306,29 @@
       if (!scroller) return;
       var mark = scroller.querySelector(":scope > .pull-refresh");
       if (!arm) {
-        if (mark) mark.remove();
+        settlePull(mark);
         return;
       }
-      if (mark) {
-        mark.style.height = "64px";
-        mark.classList.add("spin");
-      }
+      pullRefresh.hold = Math.max(48, mark ? mark.getBoundingClientRect().height : 56);
+      pullRefresh.release = true;
       pullRefresh.loading = true;
-      reload().catch(function () {}).then(function () {
+      reload().catch(function () {
+        pullRefresh.release = false;
         pullRefresh.loading = false;
       });
     });
+  function settlePull(mark) {
+    if (!mark) return;
+    var height = mark.getBoundingClientRect().height;
+    mark.style.height = height + "px";
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        mark.classList.add("settle");
+        mark.style.height = "0px";
+      });
+    });
+    setTimeout(function () { if (mark.parentNode) mark.remove(); }, 720);
+  }
   }
 
   function bindChatSwipe() {
@@ -2054,29 +2411,36 @@
       }
       else if (act === "tab") {
         if (state.tab === id && state.route === "main") {
-          var scroller = document.querySelector('.tab-pane[data-pane="' + id + '"] .scroll');
+          var box = document.querySelector('.tab-pane[data-pane="' + id + '"]');
+          var panes = box ? box.querySelectorAll(".post-pane") : [];
+          var scroller = panes.length ? panes[state.postFilter === "followed" ? 1 : 0] : (box && box.querySelector(".scroll"));
           if (scroller) scroller.scrollTo({ top: 0, behavior: "smooth" });
           return;
         }
         var wasMain = state.route === "main";
         state.tab = id;
         state.route = "main";
-        if (wasMain && slideTabs(true)) return;
-        motion = "fade";
+        if (wasMain && slideTabs()) return;
+        motion = "replace";
         draw();
       }
-      else if (act === "post-filter") { state.postFilter = id; draw(); }
-      else if (act === "apple") await apple();
+      else if (act === "post-filter") { setPostFilter(id, true); }
+      else if (act === "apple") { if (!appleBusy) await apple(); }
       else if (act === "agree") { await Bridge.eula(); go("auth"); }
       else if (act === "follow") {
         var who = String(id || "").toLowerCase();
-        if (!who || who === API.me()) return;
+        if (!who || who === String(API.me() || "").toLowerCase()) return;
         var on = !following(who);
         rememberFollow(who, on);
-        draw();
+        if (isAI(who)) saveExtraFollows();
+        paintFollow(who, on);
         try { await API.setFollow(who, on); }
         catch (err) {
-          if (!alreadyThere(err)) { rememberFollow(who, !on); draw(); throw err; }
+          if (!alreadyThere(err) && !isAI(who)) {
+            rememberFollow(who, !on);
+            paintFollow(who, !on);
+            throw err;
+          }
         }
         Bridge.toast(on ? "Followed." : "Unfollowed.");
       }
@@ -2109,11 +2473,15 @@
         var pid = String(id || "").toLowerCase();
         var liked = state.likes.indexOf(pid) < 0;
         rememberLike(pid, liked);
-        draw();
+        paintHeart("like", pid, liked);
         if (pid.indexOf("clip-") !== 0) {
           try { await API.like(pid, liked); }
           catch (err) {
-            if (!alreadyThere(err)) { rememberLike(pid, !liked); draw(); throw err; }
+            if (!alreadyThere(err)) {
+              rememberLike(pid, !liked);
+              paintHeart("like", pid, !liked);
+              throw err;
+            }
           }
         }
         if (liked) Bridge.toast("Liked.");
@@ -2125,7 +2493,7 @@
           ? state.roomLikes.filter(function (item) { return item !== rid; })
           : state.roomLikes.concat([rid]);
         saveRoomLikes();
-        draw();
+        paintHeart("like-room", rid, !loved);
         if (!loved) Bridge.toast("Liked.");
       }
       else if (act === "open-post") go("post", { post: id });
@@ -2158,13 +2526,21 @@
         if (index < 0) index = state.shopPick || 0;
         state.shopPick = index;
         packs.forEach(function (item, i) { item.classList.toggle("on", i === index); });
-        var frame = grid && grid.querySelector(".shop-frame");
-        if (frame) frame.style.transform = "translate(" + pack.offsetLeft + "px," + pack.offsetTop + "px)";
-        await new Promise(function (resolve) { setTimeout(resolve, 340); });
         var bought = await Bridge.buy(id);
         if (bought && bought.ok) await reload();
       }
-      else if (act === "profile-tab") { state.profileTab = id; draw(); }
+      else if (act === "profile-tab") {
+        if (!id || state.profileTab === id) return;
+        state.profileTab = id;
+        document.querySelectorAll(".prof-pills .pill").forEach(function (pill) {
+          pill.classList.toggle("on", pill.getAttribute("data-id") === id);
+        });
+        var host = document.querySelector(".prof-cards");
+        if (!host) { draw(); return; }
+        host.innerHTML = profileCards(state.profile || API.me());
+        watchPhotos(host);
+        startPostVideos(host);
+      }
       else if (act === "clean-cache") { Bridge.toast("Cleaned."); }
       else if (act === "compose-kind") {
         keepDraft();
@@ -2195,7 +2571,7 @@
         else if (coverMedia && coverMedia.message) Bridge.toast(plainError(coverMedia.message));
         draw();
       }
-      else if (act === "gift") { state.sheet = "gift"; draw(); }
+      else if (act === "gift") { state.sheet = "gift"; drawSheet(); }
       else if (act === "send-gift") {
         var cost = Number(node.getAttribute("data-cost")) || 0;
         var gems = (state.me && state.me.gems) || 0;
@@ -2248,7 +2624,7 @@
       else if (act === "about-person") openAbout("live", id);
       else if (act === "about-ai") openAbout("ai", "pegu");
       else if (act === "ai-faq") { state.aiFaq = true; state.sheet = null; draw(); }
-      else if (act === "add-tag") { keepDraft(); state.sheet = "tag"; draw(); }
+      else if (act === "add-tag") { keepDraft(); state.sheet = "tag"; drawSheet(); }
       else if (act === "call") go("call");
       else if (act === "ai-prompt") { await sendAI(id); }
       else if (act === "close-sheet") closeSheet();
@@ -2276,20 +2652,23 @@
         if (full.webkitEnterFullscreen) full.webkitEnterFullscreen();
         else if (full.requestFullscreen) full.requestFullscreen();
       }
-      else if (act === "report") { state.sheet = "report"; draw(); }
-      else if (act === "feedback") { state.sheet = "feedback"; draw(); }
+      else if (act === "report") { state.sheet = "report"; drawSheet(); }
+      else if (act === "feedback") { state.sheet = "feedback"; drawSheet(); }
       else if (act === "audience") {
-        if (state.live) state.audience = await API.roomMembers(state.live).catch(function () { return state.audience; });
         state.sheet = "audience";
-        draw();
+        state.audienceLoading = true;
+        drawSheet();
+        if (state.live) state.audience = await API.roomMembers(state.live).catch(function () { return state.audience; });
+        state.audienceLoading = false;
+        if (state.sheet === "audience") drawSheet();
       }
       else if (act === "pick-frame") { state.framePick = Number(id); draw(); }
       else if (act === "confirm-logout") { stack = []; await Bridge.signOut(); go("auth"); }
       else if (act === "confirm-erase") { stack = []; await API.deleteAccount(); await Bridge.signOut(); go("auth"); }
-      else if (act === "block-user") { state.sheet = "blacklist"; draw(); }
+      else if (act === "block-user") { state.sheet = "blacklist"; drawSheet(); }
       else if (act === "delete-target") {
         state.sheet = state.aboutKind === "chat" ? "delete-chat" : "delete-post";
-        draw();
+        drawSheet();
       }
       else if (act === "delete-comment") {
         await API.deleteComment(state.aboutId);
@@ -2343,8 +2722,8 @@
         if (leave && state.route !== "main") back();
       }
       else if (act === "unblock") { await API.unblock(id); await reload(); Bridge.toast("Removed."); }
-      else if (act === "logout") { state.sheet = "logout"; draw(); }
-      else if (act === "erase") { state.sheet = "erase"; draw(); }
+      else if (act === "logout") { state.sheet = "logout"; drawSheet(); }
+      else if (act === "erase") { state.sheet = "erase"; drawSheet(); }
     } catch (err) {
       Bridge.toast(err.message || String(err));
     } finally {
@@ -2369,7 +2748,7 @@
     }
     if (kind !== "post" && kind !== "comment" && kind !== "chat" && kind !== "ai" && state.aboutMine) return;
     state.sheet = "about";
-    draw();
+    drawSheet();
   }
 
   function onHold(event) {
@@ -2404,12 +2783,28 @@
     }
   }
 
+  var appleBusy = false;
   async function apple() {
-    await Bridge.eula();
-    var result = await Bridge.apple();
-    if (result && result.ok === false && result.cancelled) return;
-    await reload();
-    go("main");
+    if (appleBusy || busy) return;
+    appleBusy = true;
+    busy = true;
+    try {
+      await Bridge.eula();
+      var result = await Bridge.apple();
+      if (result && result.ok === false) {
+        if (!result.cancelled && result.error) Bridge.toast(result.error);
+        return;
+      }
+      await Bridge.wait(true);
+      await reload();
+      go("main");
+    } catch (err) {
+      Bridge.toast((err && err.message) || String(err));
+    } finally {
+      appleBusy = false;
+      busy = false;
+      await Bridge.wait(false);
+    }
   }
 
   async function onSubmit(event) {
@@ -2418,7 +2813,7 @@
     var kind = form.getAttribute("data-form");
     var data = new FormData(form);
     var body = String(data.get("body") || "").trim();
-    if (busy) return;
+    if (busy || appleBusy) return;
     var notice = "";
     try {
       if (kind === "register") {
@@ -2596,17 +2991,14 @@
       var left = await API.spendGems(5);
       if (state.me && typeof left === "number") state.me.gems = left;
     } catch (err) {
-      lines.pop();
-      lines.pop();
       var msg = String((err && err.message) || err);
       if (/not enough/i.test(msg)) {
+        lines.pop();
+        lines.pop();
         askRecharge(lines, body);
         return;
       }
-      persistAI();
-      draw();
-      Bridge.toast(msg);
-      return;
+      if (state.me) state.me.gems = Math.max(0, gems - 5);
     }
     if (state.route !== "ai") { persistAI(); return; }
     var answer = peguReply(body, lines);

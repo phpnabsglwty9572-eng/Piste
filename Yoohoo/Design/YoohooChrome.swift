@@ -45,8 +45,8 @@ struct YoohooToast: View {
         .background(Capsule().fill(Color.white.opacity(0.96)))
         .overlay(Capsule().stroke(YoohooColor.ice, lineWidth: 1))
         .padding(.horizontal, 28)
-        .padding(.top, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.top, spinning ? 0 : 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: spinning ? .center : .top)
         .allowsHitTesting(false)
     }
 }
@@ -82,3 +82,4 @@ struct PressDownStyle: ButtonStyle {
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
+

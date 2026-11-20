@@ -13,12 +13,100 @@
     return h;
   }
 
-  async function req(path, options) {
+  var refreshing = null;
+
+  function jwtExp(token) {
+    try {
+      var part = String(token || "").split(".")[1] || "";
+      part = part.replace(/-/g, "+").replace(/_/g, "/");
+      while (part.length % 4) part += "=";
+      var payload = JSON.parse(atob(part));
+      return Number(payload.exp) || 0;
+    } catch (err) {
+      return 0;
+    }
+  }
+
+  function tokenStale() {
+    if (!tokens.access) return false;
+    var exp = jwtExp(tokens.access);
+    if (!exp) return false;
+    return exp * 1000 < Date.now() + 20000;
+  }
+
+  function expiredAuth(message, status) {
+    var text = String(message || "").toLowerCase();
+    if (status === 401) return true;
+    return text.indexOf("jwt expired") >= 0 || text.indexOf("invalid jwt") >= 0 || text.indexOf("bad_jwt") >= 0 || text.indexOf("session expired") >= 0;
+  }
+
+  function isAuthPath(path) {
+    return String(path || "").indexOf("/auth/v1/") === 0;
+  }
+
+  async function refreshSession() {
+    if (refreshing) return refreshing;
+    refreshing = (async function () {
+      var ok = false;
+      if (tokens.refresh) {
+        try {
+          var res = await fetch(url() + "/auth/v1/token?grant_type=refresh_token", {
+            method: "POST",
+            headers: {
+              apikey: key(),
+              Authorization: "Bearer " + key(),
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ refresh_token: tokens.refresh })
+          });
+          var text = await res.text();
+          var data = text ? JSON.parse(text) : null;
+          if (res.ok) {
+            saveTokens(data);
+            if (global.Bridge && Bridge.setSession) Bridge.setSession(tokens.access, tokens.refresh);
+            ok = true;
+          }
+        } catch (err) {}
+      }
+      if (!ok && global.Bridge && Bridge.post) {
+        try {
+          var fresh = await Bridge.post("sessionTokens");
+          if (fresh && fresh.accessToken) {
+            tokens.access = fresh.accessToken;
+            if (fresh.refreshToken) tokens.refresh = fresh.refreshToken;
+            ok = true;
+          }
+        } catch (err) {}
+      }
+      return ok;
+    })();
+    try { return await refreshing; }
+    finally { refreshing = null; }
+  }
+
+  function useAccess(options) {
+    if (options && options.headers && tokens.access) {
+      options.headers.Authorization = "Bearer " + tokens.access;
+    }
+  }
+
+  async function req(path, options, retried) {
+    if (!retried && !isAuthPath(path) && tokenStale()) {
+      await refreshSession();
+      useAccess(options);
+    }
     var res = await fetch(url() + path, options);
     var text = await res.text();
     var data = text ? JSON.parse(text) : null;
     if (!res.ok) {
       var message = (data && (data.message || data.error_description || data.msg)) || text || "Request failed";
+      if (!retried && !isAuthPath(path) && expiredAuth(message, res.status)) {
+        var ok = await refreshSession();
+        if (ok) {
+          useAccess(options);
+          return req(path, options, true);
+        }
+      }
       throw new Error(message);
     }
     return data;
@@ -100,12 +188,14 @@
       return rest("/rooms?owner_id=in.(" + ids.join(",") + ")&order=created_at.desc");
     },
     follows: function () { return rest("/follows?select=*"); },
-    blocks: async function () {
-      try { return await rest("/blocks?blocker=eq." + me); }
+    blocks: async function (user) {
+      var who = String(user || me || "").toLowerCase();
+      if (!who) return [];
+      try { return await rest("/blocks?blocker=eq." + who); }
       catch (err) {
         var msg = String(err && err.message || "");
         if (msg.indexOf("column") < 0 && msg.indexOf("schema") < 0) throw err;
-        return rest("/blocks?blocker_id=eq." + me);
+        return rest("/blocks?blocker_id=eq." + who);
       }
     },
     likes: function () { return rest("/post_likes?user_id=eq." + me); },

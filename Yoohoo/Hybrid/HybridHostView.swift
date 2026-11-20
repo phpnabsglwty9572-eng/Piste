@@ -21,6 +21,7 @@ struct HybridHostView: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: HybridViewController, context: Context) {
         controller.session = session
         controller.nav = nav
+        controller.applyStatusChrome()
     }
 }
 
@@ -35,6 +36,25 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
     private var pickedBlobs: [String: Data] = [:]
     private var pickSerial = 0
     private let ringer = CallRinger()
+    private let statusBarFill = UIView()
+    private let scrollLock = WebScrollLock()
+    private var authWatch: Task<Void, Never>?
+
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        statusChromeOn ? .lightContent : .darkContent
+    }
+
+    override var childForStatusBarStyle: UIViewController? { nil }
+
+    override var shouldAutorotate: Bool { true }
+
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        .allButUpsideDown
+    }
+
+    private var statusChromeOn: Bool {
+        session?.h5Ready == true && session?.darkStatusBar == true
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -48,6 +68,10 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
             rnView.topAnchor.constraint(equalTo: view.topAnchor),
             rnView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+        statusBarFill.backgroundColor = .black
+        statusBarFill.isHidden = true
+        statusBarFill.isUserInteractionEnabled = false
+        view.addSubview(statusBarFill)
         let edge = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(onEdge(_:)))
         edge.edges = .left
         edge.delegate = self
@@ -55,17 +79,60 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardFrame(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardFrame(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
         Task { await boot() }
+        watchAuth()
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             Task { @MainActor in
                 self?.session?.h5Ready = true
+                self?.applyStatusChrome()
             }
         }
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        let top = view.safeAreaInsets.top
+        statusBarFill.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: max(top, 0))
+        view.bringSubviewToFront(statusBarFill)
+    }
+
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: { [weak self] _ in
+            self?.pingViewport()
+        }, completion: { [weak self] _ in
+            self?.pingViewport()
+        })
+    }
+
+    private func pingViewport() {
+        let js = "window.dispatchEvent(new Event('resize'))"
+        rnView?.evaluateJavaScript(js, completionHandler: nil)
+        h5View?.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    func applyStatusChrome() {
+        let on = statusChromeOn
+        statusBarFill.isHidden = !on
+        UIApplication.shared.statusBarStyle = on ? .lightContent : .darkContent
+        setNeedsStatusBarAppearanceUpdate()
+        parent?.setNeedsStatusBarAppearanceUpdate()
+    }
+
     deinit {
+        authWatch?.cancel()
         NotificationCenter.default.removeObserver(self)
         rnView?.configuration.userContentController.removeScriptMessageHandler(forName: "yoohoo")
         h5View?.configuration.userContentController.removeScriptMessageHandler(forName: "yoohoo")
+    }
+
+    private func watchAuth() {
+        authWatch?.cancel()
+        authWatch = Task { [weak self] in
+            for await (event, _) in YoohooBackend.client.auth.authStateChanges {
+                guard event == .tokenRefreshed || event == .signedIn else { continue }
+                await self?.pushSession()
+            }
+        }
     }
 
     private func boot() async {
@@ -91,8 +158,10 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         web.uiDelegate = self
         web.allowsBackForwardNavigationGestures = false
         web.scrollView.bounces = false
+        web.scrollView.isScrollEnabled = false
         web.scrollView.keyboardDismissMode = .interactive
         web.scrollView.contentInsetAdjustmentBehavior = .never
+        web.scrollView.delegate = scrollLock
         web.isOpaque = true
         web.backgroundColor = Self.splashFill
         web.scrollView.backgroundColor = Self.splashFill
@@ -145,6 +214,11 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
             reply(id, ["ok": true])
         case "settled":
             session?.h5Ready = true
+            applyStatusChrome()
+            reply(id, ["ok": true])
+        case "chrome":
+            session?.darkStatusBar = payload["dark"] as? Bool ?? false
+            applyStatusChrome()
             reply(id, ["ok": true])
         case "mountH5":
             mountH5()
@@ -185,6 +259,12 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
                 session?.stopLoading()
             }
             reply(id, ["ok": true])
+        case "sessionTokens":
+            let tokens = await YoohooBackend.sessionTokens()
+            var bag: [String: Any] = ["ok": true]
+            if let access = tokens.access { bag["accessToken"] = access }
+            if let refresh = tokens.refresh { bag["refreshToken"] = refresh }
+            reply(id, bag)
         case "eulaText":
             reply(id, ["text": eulaText()])
         case "haptic":
@@ -221,23 +301,18 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
 
     private func runApple(_ id: String) async {
         do {
-            let credential = try await AppleSignIn.request()
-            session?.startLoading()
+            let credential = try await AppleSignIn.request(anchor: view.window)
             try await session?.signInWithApple(
                 token: credential.identityToken,
                 nonce: credential.nonce,
                 userID: credential.userID,
                 fullName: credential.fullName
             )
-            session?.stopLoading()
             await pushSession()
             reply(id, ["ok": true])
         } catch let error as AppleSignInError where error == .cancelled {
-            session?.stopLoading()
             reply(id, ["ok": false, "cancelled": true])
         } catch {
-            session?.stopLoading()
-            session?.show(error.localizedDescription)
             reply(id, ["ok": false, "error": error.localizedDescription])
         }
     }
@@ -293,7 +368,7 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         config.filter = video ? .videos : .images
         let picker = PHPickerViewController(configuration: config)
         picker.delegate = self
-        present(picker, animated: true)
+        presentSheet(picker)
     }
 
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
@@ -422,10 +497,22 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         }
     }
 
+    private func presentSheet(_ controller: UIViewController) {
+        if traitCollection.horizontalSizeClass == .regular {
+            controller.modalPresentationStyle = .formSheet
+            if let pop = controller.popoverPresentationController {
+                pop.sourceView = view
+                pop.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+                pop.permittedArrowDirections = []
+            }
+        }
+        present(controller, animated: true)
+    }
+
     private func openLegal(_ kind: String) {
         let url = kind == "privacy" ? YoohooConfig.privacyURL : YoohooConfig.termsURL
         guard let url else { return }
-        present(SFSafariViewController(url: url), animated: true)
+        presentSheet(SFSafariViewController(url: url))
     }
 
     private func ensureEULA(_ next: @escaping () -> Void) {
@@ -455,8 +542,9 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
             "hotVersion": NSNumber(value: paths?.version ?? 0),
             "h5URL": paths?.h5Index.absoluteString ?? ""
         ]
-        if let access = await YoohooBackend.accessToken() { payload["accessToken"] = access }
-        if let refresh = await YoohooBackend.refreshToken() { payload["refreshToken"] = refresh }
+        let tokens = await YoohooBackend.sessionTokens()
+        if let access = tokens.access { payload["accessToken"] = access }
+        if let refresh = tokens.refresh { payload["refreshToken"] = refresh }
         emit("session", payload)
     }
 
@@ -521,11 +609,30 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect) ?? .zero
         let local = view.convert(frame, from: nil)
         let height = note.name == UIResponder.keyboardWillHideNotification ? 0 : max(0, view.bounds.maxY - local.minY)
+        pinWebScroll(rnView?.scrollView)
+        pinWebScroll(h5View?.scrollView)
         emit("keyboard", ["height": NSNumber(value: height)])
+    }
+
+    private func pinWebScroll(_ scroll: UIScrollView?) {
+        guard let scroll else { return }
+        scroll.contentInset = .zero
+        scroll.scrollIndicatorInsets = .zero
+        if scroll.contentOffset != .zero {
+            scroll.setContentOffset(.zero, animated: false)
+        }
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
         true
+    }
+}
+
+final class WebScrollLock: NSObject, UIScrollViewDelegate {
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView.contentOffset != .zero else { return }
+        scrollView.contentInset = .zero
+        scrollView.setContentOffset(.zero, animated: false)
     }
 }
 
