@@ -194,24 +194,67 @@ workflows:
         script: |
           python3 - <<'PY'
           import json
+          import re
           import subprocess
 
           bundle = "com.piste.lifeshare"
 
-          def run(args):
-              result = subprocess.run(["app-store-connect", "--json", *args], capture_output=True, text=True)
-              if result.returncode != 0:
-                  raise SystemExit(result.stderr.strip() or result.stdout.strip() or "App Store Connect request failed")
-              text = result.stdout.strip()
+          def invoke(args):
+              # This image's CLI rejects global `--json` before the action.
+              candidates = [
+                  ["app-store-connect", args[0], "--json", *args[1:]],
+                  ["app-store-connect", *args, "--json"],
+                  ["app-store-connect", *args],
+              ]
+              last = None
+              for cmd in candidates:
+                  result = subprocess.run(cmd, capture_output=True, text=True)
+                  last = result
+                  if result.returncode == 0:
+                      return result
+                  err = f"{result.stderr}\n{result.stdout}"
+                  if "unrecognized arguments" not in err:
+                      raise SystemExit(err.strip() or "App Store Connect request failed")
+              raise SystemExit((last.stderr or last.stdout or "App Store Connect request failed").strip())
+
+          def parse(result):
+              text = (result.stdout or "").strip()
               if not text:
                   return []
               try:
                   data = json.loads(text)
+                  if isinstance(data, dict):
+                      data = data.get("data", [data])
+                  return data if isinstance(data, list) else [data]
               except json.JSONDecodeError:
-                  data = [json.loads(line) for line in text.splitlines() if line.strip()[:1] in "{["]
-              if isinstance(data, dict):
-                  data = data.get("data", [data])
-              return data
+                  pass
+              rows = []
+              current = {}
+              for line in text.splitlines():
+                  match = re.match(
+                      r"^(Id|Identifier|Type|Name|Platform|capabilityType|Capability)\s*:\s*(.+)$",
+                      line.strip(),
+                      re.I,
+                  )
+                  if not match:
+                      continue
+                  key = match.group(1).lower()
+                  value = match.group(2).strip()
+                  if key == "id":
+                      if current:
+                          rows.append(current)
+                      current = {"id": value, "attributes": {}}
+                      continue
+                  attr = "capabilityType" if key in {"capabilitytype", "capability"} else key
+                  current.setdefault("attributes", {})[attr] = value
+                  if "id" not in current:
+                      current["id"] = value
+              if current:
+                  rows.append(current)
+              return rows
+
+          def run(args):
+              return parse(invoke(args))
 
           def identifier_of(item):
               if not isinstance(item, dict):
@@ -219,31 +262,47 @@ workflows:
               attrs = item.get("attributes") or {}
               return attrs.get("identifier") or item.get("identifier") or ""
 
-          bundles = run([
-              "bundle-ids", "list",
-              "--identifier", bundle,
-              "--platform", "IOS",
-          ])
-          bundles = [item for item in bundles if identifier_of(item) == bundle]
+          bundles = [
+              item for item in run(["bundle-ids", "list", "--identifier", bundle, "--platform", "IOS"])
+              if identifier_of(item) == bundle
+          ]
           if not bundles:
               created = run(["bundle-ids", "create", bundle, "--platform", "IOS", "--name", "Piste"])
               bundles = created if isinstance(created, list) else [created]
+          if not bundles or not bundles[0].get("id"):
+              raise SystemExit("Could not resolve the review bundle id")
           bundle_resource_id = bundles[0]["id"]
           capabilities = run(["bundle-ids", "capabilities", bundle_resource_id])
-          enabled = {item.get("attributes", {}).get("capabilityType") for item in capabilities}
+          enabled = {
+              item.get("attributes", {}).get("capabilityType") or item.get("capabilityType")
+              for item in capabilities
+          }
           if "APPLE_ID_AUTH" not in enabled:
               subprocess.run(
-                  ["app-store-connect", "bundle-ids", "enable-capabilities", bundle_resource_id, "--capability", "Sign In with Apple"],
+                  [
+                      "app-store-connect",
+                      "bundle-ids",
+                      "enable-capabilities",
+                      bundle_resource_id,
+                      "--capability",
+                      "Sign In with Apple",
+                  ],
                   check=True,
               )
           profiles = run([
-              "bundle-ids", "profiles",
-              "--bundle-ids", bundle_resource_id,
-              "--type", "IOS_APP_STORE",
+              "bundle-ids",
+              "profiles",
+              "--bundle-ids",
+              bundle_resource_id,
+              "--type",
+              "IOS_APP_STORE",
           ])
           for profile in profiles:
+              profile_id = profile.get("id")
+              if not profile_id:
+                  continue
               subprocess.run(
-                  ["app-store-connect", "profiles", "delete", profile["id"], "--ignore-not-found"],
+                  ["app-store-connect", "profiles", "delete", profile_id, "--ignore-not-found"],
                   check=True,
               )
           print("Sign in with Apple is enabled for", bundle)
@@ -304,8 +363,13 @@ workflows:
         script: |
           set -e
           cd "$CM_BUILD_DIR"
-          TF_BUILD=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || true)
-          APP_BUILD=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || true)
+          if [ -n "${APP_STORE_APPLE_ID:-}" ] && [ "$APP_STORE_APPLE_ID" != "0" ]; then
+            TF_BUILD=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || true)
+            APP_BUILD=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || true)
+          else
+            TF_BUILD=0
+            APP_BUILD=0
+          fi
           TF_BUILD=${TF_BUILD:-0}
           APP_BUILD=${APP_BUILD:-0}
           if ! [[ "$TF_BUILD" =~ ^[0-9]+$ ]]; then TF_BUILD=0; fi
