@@ -7,24 +7,35 @@
   function key() { return env().supabaseKey || ""; }
 
   function headers(json, prefer) {
-    var h = { apikey: key(), Authorization: "Bearer " + (tokens.access || key()) };
+    var h = {
+      apikey: key(),
+      Authorization: "Bearer " + (tokens.access || key()),
+      Accept: "application/json"
+    };
     if (json) h["Content-Type"] = "application/json";
-    h.Prefer = prefer || "return=representation";
+    if (prefer) h.Prefer = prefer;
     return h;
   }
 
   var refreshing = null;
 
-  function jwtExp(token) {
+  function jwtPayload(token) {
     try {
       var part = String(token || "").split(".")[1] || "";
       part = part.replace(/-/g, "+").replace(/_/g, "/");
       while (part.length % 4) part += "=";
-      var payload = JSON.parse(atob(part));
-      return Number(payload.exp) || 0;
+      return JSON.parse(atob(part));
     } catch (err) {
-      return 0;
+      return null;
     }
+  }
+
+  function jwtExp(token) {
+    return Number((jwtPayload(token) || {}).exp) || 0;
+  }
+
+  function jwtSub(token) {
+    return String((jwtPayload(token) || {}).sub || "").toLowerCase();
   }
 
   function tokenStale() {
@@ -91,13 +102,23 @@
   }
 
   async function req(path, options, retried) {
+    options = options || {};
+    options.cache = "no-store";
+    options.credentials = "omit";
     if (!retried && !isAuthPath(path) && tokenStale()) {
       await refreshSession();
       useAccess(options);
     }
     var res = await fetch(url() + path, options);
     var text = await res.text();
-    var data = text ? JSON.parse(text) : null;
+    var data = null;
+    if (text) {
+      try { data = JSON.parse(text); }
+      catch (err) {
+        if (!res.ok) throw new Error(text || "Request failed");
+        throw err;
+      }
+    }
     if (!res.ok) {
       var message = (data && (data.message || data.error_description || data.msg)) || text || "Request failed";
       if (!retried && !isAuthPath(path) && expiredAuth(message, res.status)) {
@@ -113,11 +134,23 @@
   }
 
   async function auth(path, body) {
-    return req("/auth/v1" + path, { method: "POST", headers: headers(true), body: JSON.stringify(body) });
+    return req("/auth/v1" + path, {
+      method: "POST",
+      headers: {
+        apikey: key(),
+        Authorization: "Bearer " + key(),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
   }
 
   async function rest(path, method, body, prefer) {
-    var options = { method: method || "GET", headers: headers(!!body, prefer) };
+    method = method || "GET";
+    var options = {
+      method: method,
+      headers: headers(!!body, prefer || (method === "GET" ? "" : "return=representation"))
+    };
     if (body) options.body = JSON.stringify(body);
     return req("/rest/v1" + path, options);
   }
@@ -146,6 +179,7 @@
     tokens.refresh = bag.refresh_token || bag.refreshToken || tokens.refresh;
     var user = bag.user || session.user;
     if (user && user.id) me = String(user.id).toLowerCase();
+    if (!me && tokens.access) me = jwtSub(tokens.access);
   }
 
   global.API = {
@@ -154,7 +188,8 @@
     setTokens: function (access, refresh, userId) {
       tokens.access = access || "";
       tokens.refresh = refresh || "";
-      me = String(userId || me || "").toLowerCase();
+      if (!tokens.access) me = "";
+      else me = String(userId || me || jwtSub(tokens.access) || "").toLowerCase();
     },
     signIn: async function (email, password) {
       var data = await auth("/token?grant_type=password", { email: email, password: password });
@@ -169,23 +204,23 @@
       }
       return data;
     },
-    profiles: function () {
-      var filter = me
-        ? "?or=(created_at.gte.\"2026-11-12T00:00:00Z\",id.eq." + me + ")"
-        : "?created_at=gte.2026-11-12T00:00:00Z";
-      return rest("/profiles" + filter);
+    profiles: async function () {
+      try {
+        if (me) return await rest("/profiles?select=*&or=(is_seed.eq.true,id.eq." + me + ")");
+        return await rest("/profiles?select=*&is_seed=eq.true");
+      } catch (err) {
+        return rest("/profiles?select=*");
+      }
     },
     posts: function (ids) {
-      if (!ids.length) return [];
-      return rest("/posts?author_id=in.(" + ids.join(",") + ")&order=created_at.desc");
+      return rest("/posts?select=*&order=created_at.desc");
     },
     comments: function (ids) {
       if (!ids.length) return [];
       return rest("/comments?post_id=in.(" + ids.join(",") + ")&order=created_at.asc");
     },
     rooms: function (ids) {
-      if (!ids.length) return [];
-      return rest("/rooms?owner_id=in.(" + ids.join(",") + ")&order=created_at.desc");
+      return rest("/rooms?select=*&order=created_at.desc");
     },
     follows: function () { return rest("/follows?select=*"); },
     blocks: async function (user) {

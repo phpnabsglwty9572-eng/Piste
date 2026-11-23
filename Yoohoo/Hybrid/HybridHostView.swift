@@ -136,12 +136,22 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
     }
 
     private func boot() async {
+        await Self.clearWebCache()
         let prepared = await HotUpdateService.prepare()
         paths = prepared
         await MainActor.run {
             let script = WKUserScript(source: bootstrapJS(), injectionTime: .atDocumentStart, forMainFrameOnly: true)
             rnView.configuration.userContentController.addUserScript(script)
             rnView.loadFileURL(prepared.rnIndex, allowingReadAccessTo: prepared.rnIndex.deletingLastPathComponent())
+        }
+    }
+
+    private static func clearWebCache() async {
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            WKWebsiteDataStore.default().removeData(ofTypes: types, modifiedSince: .distantPast) {
+                done.resume()
+            }
         }
     }
 
@@ -210,6 +220,9 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
     private func handle(type: String, id: String, payload: [String: Any]) async {
         switch type {
         case "ready":
+            if session?.signedIn == false {
+                await session?.restore()
+            }
             await pushSession()
             reply(id, ["ok": true])
         case "settled":
@@ -245,7 +258,12 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         case "pickMedia":
             pick(id: id, max: payload["max"] as? Int ?? 1, video: payload["video"] as? Bool ?? false)
         case "uploadMedia":
-            await uploadPicked(id: id, pick: payload["pick"] as? String ?? "", path: payload["path"] as? String ?? "")
+            await uploadPicked(
+                id: id,
+                pick: payload["pick"] as? String ?? "",
+                path: payload["path"] as? String ?? "",
+                accessToken: payload["accessToken"] as? String ?? ""
+            )
         case "openLegal":
             openLegal(payload["kind"] as? String ?? "terms")
             reply(id, ["ok": true])
@@ -445,14 +463,15 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
         return rendered.jpegData(compressionQuality: quality) ?? Data()
     }
 
-    private func uploadPicked(id: String, pick: String, path: String) async {
+    private func uploadPicked(id: String, pick: String, path: String, accessToken: String) async {
         guard let data = pickedBlobs[pick], data.isEmpty == false else {
             reply(id, ["ok": false, "message": "Choose a photo again."])
             return
         }
-        guard let token = await YoohooBackend.accessToken(),
-              let uid = YoohooBackend.userID?.uuidString.lowercased(),
-              path.hasPrefix(uid + "/"),
+        var token = accessToken
+        if token.isEmpty { token = await YoohooBackend.accessToken() ?? "" }
+        guard token.isEmpty == false,
+              path.isEmpty == false,
               let endpoint = URL(string: YoohooConfig.supabaseURL + "/storage/v1/object/media/" + path)
         else {
             reply(id, ["ok": false, "message": "Could not upload the photo."])
@@ -542,9 +561,11 @@ final class HybridViewController: UIViewController, WKScriptMessageHandler, WKNa
             "hotVersion": NSNumber(value: paths?.version ?? 0),
             "h5URL": paths?.h5Index.absoluteString ?? ""
         ]
-        let tokens = await YoohooBackend.sessionTokens()
-        if let access = tokens.access { payload["accessToken"] = access }
-        if let refresh = tokens.refresh { payload["refreshToken"] = refresh }
+        if session?.signedIn == true {
+            let tokens = await YoohooBackend.sessionTokens()
+            if let access = tokens.access { payload["accessToken"] = access }
+            if let refresh = tokens.refresh { payload["refreshToken"] = refresh }
+        }
         emit("session", payload)
     }
 

@@ -87,6 +87,8 @@
   }
   var stack = [];
   var busy = false;
+  var appleBusy = false;
+  var authLocked = false;
   var poller = 0;
   var callStream = null;
   var lastViewportW = 0;
@@ -123,6 +125,7 @@
     return src ? '<img class="' + (cls || "cover") + '" src="' + esc(src) + '" />' : '<div class="' + (cls || "cover") + '"></div>';
   }
   function stamp(raw) {
+    raw = String(raw || "");
     if (!raw || raw.indexOf("T") < 0) return "";
     return raw.split("T")[1].slice(0, 5);
   }
@@ -273,13 +276,18 @@
   }
 
   function applyNativeSession(payload) {
-    if (payload.accessToken) API.setTokens(payload.accessToken, payload.refreshToken, payload.meID);
+    var onAuth = state.route === "auth" || state.route === "signin" || state.route === "register" || state.route === "register2" || state.route === "boot";
+    if (payload.signedIn && payload.accessToken) {
+      API.setTokens(payload.accessToken, payload.refreshToken, payload.meID);
+    } else if (payload.signedIn === false && !authLocked && !appleBusy) {
+      API.setTokens("", "", "");
+    }
     state.signedIn = !!payload.signedIn;
     state.holdSplash = false;
     if (state.route === "boot") {
       var start = (Bridge.env().startRoute || "");
       var keepAuth = ["auth", "signin", "register", "register2"].indexOf(start) >= 0;
-      if (payload.signedIn && !keepAuth) {
+      if (payload.signedIn && payload.accessToken && !keepAuth) {
         stack = [];
         reload().then(function () {
           go("main");
@@ -298,11 +306,10 @@
     state.me.gems = payload.coins || 0;
     var pinned = (Bridge.env().startRoute || "");
     var keepAuth = ["auth", "signin", "register", "register2"].indexOf(pinned) >= 0;
-    var onAuth = state.route === "auth" || state.route === "signin" || state.route === "register" || state.route === "register2";
-    if (appleBusy) return;
-    if (payload.signedIn && !keepAuth && onAuth) {
+    if (appleBusy || authLocked) return;
+    if (payload.signedIn && payload.accessToken && !keepAuth && onAuth) {
       reload().then(function () { stack = []; go("main"); }).catch(function () {});
-    } else if (payload.signedIn && !state.ready && !onAuth) {
+    } else if (payload.signedIn && payload.accessToken && !state.ready && !onAuth) {
       reload().then(function () { if (pinned) window.goTo(pinned); }).catch(function () {});
     }
     if (payload.signedIn === false && state.route !== "auth" && state.route !== "signin" && state.route !== "register" && state.route !== "register2") {
@@ -312,19 +319,24 @@
   }
 
   var feedJob = null;
-  async function reload() {
-    if (feedJob) return feedJob;
-    feedJob = (async function () {
+  var feedGen = 0;
+  async function reload(force) {
+    if (feedJob && !force) return feedJob;
+    var gen = ++feedGen;
+    var job = (async function () {
       try {
         await loadFeed();
+      } catch (err) {
       } finally {
+        if (gen !== feedGen) return;
         state.ready = true;
         applyRemembered();
         draw();
       }
     })();
-    try { await feedJob; }
-    finally { feedJob = null; }
+    feedJob = job;
+    try { await job; }
+    finally { if (feedJob === job) feedJob = null; }
   }
 
   function settleList(err) { return []; }
@@ -354,7 +366,27 @@
   }
 
   async function loadFeed() {
-    var profiles = await API.profiles();
+    var me = API.me();
+    var first = await Promise.all([
+      API.profiles().catch(settleList),
+      API.posts().catch(settleList),
+      API.rooms().catch(settleList),
+      API.follows().catch(settleList),
+      API.blocks(me).catch(settleList),
+      API.likes().catch(settleList),
+      API.threads().catch(settleList),
+      API.hides().catch(settleList),
+      me ? API.aiLines().catch(settleList) : Promise.resolve([])
+    ]);
+    function asList(rows) { return Array.isArray(rows) ? rows : []; }
+    var profiles = asList(first[0]);
+    var posts = asList(first[1]);
+    var rooms = asList(first[2]);
+    if (!rooms.length) rooms = asList(await API.rooms().catch(settleList));
+    if (!posts.length) posts = asList(await API.posts().catch(settleList));
+    if (!profiles.length) profiles = asList(await API.profiles().catch(settleList));
+    state.posts = posts.slice();
+    state.rooms = rooms.slice();
     var map = {};
     profiles.forEach(function (row) {
       row.id = String(row.id || "").toLowerCase();
@@ -368,7 +400,6 @@
       if (!row.handle) row.handle = role.handle.replace(/^@/, "");
       map[role.id] = row;
     });
-    var ids = Object.keys(map);
     state.profiles = map;
     state.me = map[API.me()] || state.me;
     loadRoomLikes();
@@ -378,19 +409,8 @@
       var mine = profiles[0];
       state.me = mine;
     }
-    var me = API.me();
-    var bag = await Promise.all([
-      API.posts(ids).catch(settleList),
-      API.rooms(ids).catch(settleList),
-      API.follows().catch(settleList),
-      API.blocks(me).catch(settleList),
-      API.likes().catch(settleList),
-      API.threads().catch(settleList),
-      API.hides().catch(settleList),
-      me ? API.aiLines().catch(settleList) : Promise.resolve([])
-    ]);
-    var posts = bag[0] || [];
-    var rooms = bag[1] || [];
+    me = API.me();
+    var bag = [posts, rooms, first[3], first[4], first[5], first[6], first[7], first[8]];
     var hidden = (bag[6] || []).map(function (row) { return String(row.thread_id || "").toLowerCase(); });
     var threads = (bag[5] || []).filter(function (row) { return hidden.indexOf(String(row.id || "").toLowerCase()) < 0; });
     var extra = await Promise.all([
@@ -626,6 +646,8 @@
         if (stack.length) {
           var prev = stack.pop();
           applySnap(prev);
+          if (prev.node) syncTabs(prev.node);
+          syncTabs(under);
           reused = prev.node === under;
         } else if (state.route !== "main" && state.route !== "auth") {
           state.route = API.me() ? "main" : "auth";
@@ -678,10 +700,21 @@
     if (state.preview) { state.preview = null; motion = "fade"; draw(); return; }
     if (state.sheet) { closeSheet(); return; }
     if (state.route === "call") { Bridge.ring(false); stopCamera(); }
-    if (stack.length) {
-      var prev = stack.pop();
-      applySnap(prev);
-      incomingPage = prev.node || null;
+    if (state.route === "register2") {
+      dropAuth();
+      go("register");
+      return;
+    }
+    if (state.route === "register" || state.route === "signin") {
+      dropAuth();
+      go("auth");
+      return;
+    }
+        if (stack.length) {
+          var prev = stack.pop();
+          applySnap(prev);
+          if (prev.node) syncTabs(prev.node);
+          incomingPage = prev.node || null;
       state.sheet = null;
       state.preview = null;
       motion = "pop";
@@ -689,7 +722,7 @@
       return;
     }
     if (state.route !== "main" && state.route !== "auth") {
-      state.route = API.me() ? "main" : "auth";
+      state.route = API.tokens().access && !authLocked ? "main" : "auth";
       motion = "pop";
       draw();
     }
@@ -1087,21 +1120,21 @@
   }
   function tabBtn(id, label, on, off) {
     var selected = state.tab === id;
-    return '<button class="tab' + (selected ? " on" : "") + '" data-act="tab" data-id="' + id + '" data-on="' + on + '" data-off="' + off + '">' +
+    return '<button type="button" class="tab' + (selected ? " on" : "") + '" data-act="tab" data-id="' + id + '" data-on="' + on + '" data-off="' + off + '">' +
       '<span class="icon"><img src="img/' + (selected ? on : off) + '" alt="" /></span>' + label + "</button>";
   }
-  function slideTabs() {
-    var panes = document.querySelectorAll(".tab-pane");
+  function syncTabs(root) {
+    var scope = root && root.querySelector ? root : document.querySelector(".main-shell");
+    if (!scope) return false;
+    var panes = scope.querySelectorAll(".tab-pane");
     if (!panes.length) return false;
     panes.forEach(function (pane) {
       var on = pane.getAttribute("data-pane") === state.tab;
-      pane.classList.remove("on");
-      if (on) {
-        void pane.offsetWidth;
-        pane.classList.add("on");
-      }
+      pane.classList.toggle("on", on);
+      if (on) pane.removeAttribute("hidden");
+      else pane.setAttribute("hidden", "");
     });
-    document.querySelectorAll(".tabs .tab").forEach(function (btn) {
+    scope.querySelectorAll(".tabs .tab").forEach(function (btn) {
       var on = btn.getAttribute("data-id") === state.tab;
       btn.classList.toggle("on", on);
       var img = btn.querySelector("img");
@@ -1154,7 +1187,7 @@
     var split = splitTags(room.title || "");
     return '<article class="live-card">' +
       '<div class="live-photo" data-act="live" data-id="' + room.id + '">' +
-        '<img class="stage" src="' + esc(photo) + '" alt="" />' +
+        '<img class="stage" src="' + esc(photo) + '" alt="" data-fallback="img/LiveStage.png" />' +
         liveBadge() +
         '<button class="play" data-act="live" data-id="' + room.id + '"><img src="img/PlayButton.svg" alt="" /></button>' +
         '<div class="live-bar">' +
@@ -1214,15 +1247,22 @@
   }
 
   async function uploadPick(item, path) {
+    var last = "";
     if (item && item.id) {
-      var sent = await Bridge.upload(item.id, path);
-      if (!sent || sent.ok === false) throw new Error(plainError(sent && sent.message));
-      if (!sent.url) throw new Error("Could not upload the photo.");
-      return sent.url;
+      try {
+        var sent = await Bridge.upload(item.id, path);
+        if (sent && sent.ok !== false && sent.url) return sent.url;
+        last = plainError(sent && sent.message);
+      } catch (err) {
+        last = (err && err.message) || String(err);
+      }
     }
     var uri = (item && item.uri) || (typeof item === "string" ? item : "");
-    if (!uri) throw new Error("Choose a photo again.");
-    return API.upload(path, uri, (item && item.mime) || "image/jpeg");
+    if (uri) {
+      try { return await API.upload(path, uri, (item && item.mime) || "image/jpeg"); }
+      catch (err) { last = (err && err.message) || String(err); }
+    }
+    throw new Error(plainError(last) || "Could not upload the photo.");
   }
 
   function pickedItems(payload) {
@@ -1408,7 +1448,7 @@
     var root = (Bridge.env().supabaseURL || "").replace(/\/$/, "");
     if (!root) return [];
     return [1, 2, 3].map(function (n) {
-      return root + "/storage/v1/object/public/media/yoohoo/live/room-" + n + ".mp4";
+      return root + "/storage/v1/object/public/media/yoohoo/rooms/live-" + n + ".mp4";
     });
   }
 
@@ -2406,21 +2446,25 @@
       }
       else if (act === "go") {
         var to = node.getAttribute("data-to");
+        if (to === "signin" || to === "register" || to === "register2") authLocked = true;
         if (to === "ai") { state.aiId = AI_ROLES[0].id; state.ai = aiLines(AI_ROLES[0].id); }
         go(to, to === "profile" ? { profile: API.me() } : null);
       }
       else if (act === "tab") {
-        if (state.tab === id && state.route === "main") {
-          var box = document.querySelector('.tab-pane[data-pane="' + id + '"]');
+        var shell = node.closest(".main-shell") || document.querySelector(".main-shell");
+        var visible = shell && shell.querySelector(".tab-pane.on");
+        var visibleId = visible ? visible.getAttribute("data-pane") : "";
+        if (id === visibleId && state.tab === id && state.route === "main") {
+          var box = shell.querySelector('.tab-pane[data-pane="' + id + '"]');
           var panes = box ? box.querySelectorAll(".post-pane") : [];
           var scroller = panes.length ? panes[state.postFilter === "followed" ? 1 : 0] : (box && box.querySelector(".scroll"));
           if (scroller) scroller.scrollTo({ top: 0, behavior: "smooth" });
           return;
         }
-        var wasMain = state.route === "main";
+        var wasMain = state.route === "main" && !!shell;
         state.tab = id;
         state.route = "main";
-        if (wasMain && slideTabs()) return;
+        if (wasMain && syncTabs(shell)) return;
         motion = "replace";
         draw();
       }
@@ -2783,22 +2827,31 @@
     }
   }
 
-  var appleBusy = false;
+  async function dropAuth() {
+    authLocked = true;
+    API.setTokens("", "", "");
+    state.signedIn = false;
+    try { await Bridge.signOut(); } catch (err) {}
+  }
   async function apple() {
     if (appleBusy || busy) return;
     appleBusy = true;
     busy = true;
+    authLocked = true;
     try {
       await Bridge.eula();
       var result = await Bridge.apple();
-      if (result && result.ok === false) {
-        if (!result.cancelled && result.error) Bridge.toast(result.error);
+      if (!result || result.ok !== true) {
+        if (result && !result.cancelled && result.error) Bridge.toast(result.error);
+        await dropAuth();
         return;
       }
       await Bridge.wait(true);
       await reload();
+      authLocked = false;
       go("main");
     } catch (err) {
+      await dropAuth();
       Bridge.toast((err && err.message) || String(err));
     } finally {
       appleBusy = false;
@@ -2839,22 +2892,34 @@
       busy = true;
       await Bridge.wait(true);
       if (kind === "signin") {
+        authLocked = true;
         await Bridge.eula();
         await API.signIn(String(data.get("email") || ""), String(data.get("password") || ""));
-        await Bridge.setSession(API.tokens().access, API.tokens().refresh);
-        await reload();
+        try { await Bridge.setSession(API.tokens().access, API.tokens().refresh); } catch (err) {}
+        try { await reload(true); } catch (err) {}
+        authLocked = false;
         stack = [];
         go("main");
       } else if (kind === "register2") {
+        authLocked = true;
         await Bridge.eula();
-        await API.signUp(state.form.email, state.form.password, state.form.name);
+        if (!API.tokens().access) {
+          await API.signUp(state.form.email, state.form.password, state.form.name);
+        }
         if (!API.tokens().access) throw new Error("Sign in failed");
-        await Bridge.setSession(API.tokens().access, API.tokens().refresh);
-        var avatar = state.avatarPickId || state.avatarPick ? rememberMedia("avatar", await uploadPick({ id: state.avatarPickId, uri: state.avatarPick }, API.me() + "/avatar.jpg")) : "";
-        var coverURL = state.coverPickId || state.coverPick ? rememberMedia("cover", await uploadPick({ id: state.coverPickId, uri: state.coverPick }, API.me() + "/cover.jpg")) : "";
+        try { await Bridge.setSession(API.tokens().access, API.tokens().refresh); } catch (err) {}
+        var avatar = "";
+        var coverURL = "";
+        if (state.avatarPickId || state.avatarPick) {
+          avatar = rememberMedia("avatar", await uploadPick({ id: state.avatarPickId, uri: state.avatarPick }, API.me() + "/avatar.jpg"));
+        }
+        if (state.coverPickId || state.coverPick) {
+          coverURL = rememberMedia("cover", await uploadPick({ id: state.coverPickId, uri: state.coverPick }, API.me() + "/cover.jpg"));
+        }
         try { await API.saveProfile(state.form.name, avatar, coverURL); } catch (err) {}
         state.avatarPick = ""; state.avatarPickId = ""; state.coverPick = ""; state.coverPickId = "";
-        try { await reload(); } catch (err) {}
+        try { await reload(true); } catch (err) {}
+        authLocked = false;
         stack = [];
         go("main");
       } else if (kind === "comment") {
@@ -2915,6 +2980,7 @@
       }
     } catch (err) {
       notice = "";
+      if ((kind === "signin" || kind === "register2") && !API.tokens().access) await dropAuth();
       Bridge.toast(err.message || String(err));
     } finally {
       busy = false;
