@@ -192,121 +192,201 @@ workflows:
 
       - name: Enable Sign in with Apple for the review bundle
         script: |
-          python3 - <<'PY'
-          import json
-          import re
-          import subprocess
+          cat > /tmp/piste-asc.js <<'JS'
+          const crypto = require("crypto");
+          const fs = require("fs");
+          const https = require("https");
 
-          bundle = "com.piste.lifeshare"
+          const bundle = "com.piste.lifeshare";
 
-          def invoke(args):
-              # This image's CLI rejects global `--json` before the action.
-              candidates = [
-                  ["app-store-connect", args[0], "--json", *args[1:]],
-                  ["app-store-connect", *args, "--json"],
-                  ["app-store-connect", *args],
-              ]
-              last = None
-              for cmd in candidates:
-                  result = subprocess.run(cmd, capture_output=True, text=True)
-                  last = result
-                  if result.returncode == 0:
-                      return result
-                  err = f"{result.stderr}\n{result.stdout}"
-                  if "unrecognized arguments" not in err:
-                      raise SystemExit(err.strip() or "App Store Connect request failed")
-              raise SystemExit((last.stderr or last.stdout or "App Store Connect request failed").strip())
-
-          def parse(result):
-              text = (result.stdout or "").strip()
-              if not text:
-                  return []
-              try:
-                  data = json.loads(text)
-                  if isinstance(data, dict):
-                      data = data.get("data", [data])
-                  return data if isinstance(data, list) else [data]
-              except json.JSONDecodeError:
-                  pass
-              rows = []
-              current = {}
-              for line in text.splitlines():
-                  match = re.match(
-                      r"^(Id|Identifier|Type|Name|Platform|capabilityType|Capability)\s*:\s*(.+)$",
-                      line.strip(),
-                      re.I,
-                  )
-                  if not match:
-                      continue
-                  key = match.group(1).lower()
-                  value = match.group(2).strip()
-                  if key == "id":
-                      if current:
-                          rows.append(current)
-                      current = {"id": value, "attributes": {}}
-                      continue
-                  attr = "capabilityType" if key in {"capabilitytype", "capability"} else key
-                  current.setdefault("attributes", {})[attr] = value
-                  if "id" not in current:
-                      current["id"] = value
-              if current:
-                  rows.append(current)
-              return rows
-
-          def run(args):
-              return parse(invoke(args))
-
-          def identifier_of(item):
-              if not isinstance(item, dict):
-                  return ""
-              attrs = item.get("attributes") or {}
-              return attrs.get("identifier") or item.get("identifier") or ""
-
-          bundles = [
-              item for item in run(["bundle-ids", "list", "--identifier", bundle, "--platform", "IOS"])
-              if identifier_of(item) == bundle
-          ]
-          if not bundles:
-              created = run(["bundle-ids", "create", bundle, "--platform", "IOS", "--name", "Piste"])
-              bundles = created if isinstance(created, list) else [created]
-          if not bundles or not bundles[0].get("id"):
-              raise SystemExit("Could not resolve the review bundle id")
-          bundle_resource_id = bundles[0]["id"]
-          capabilities = run(["bundle-ids", "capabilities", bundle_resource_id])
-          enabled = {
-              item.get("attributes", {}).get("capabilityType") or item.get("capabilityType")
-              for item in capabilities
+          function b64url(value) {
+            return Buffer.from(value)
+              .toString("base64")
+              .replace(/=/g, "")
+              .replace(/\+/g, "-")
+              .replace(/\//g, "_");
           }
-          if "APPLE_ID_AUTH" not in enabled:
-              subprocess.run(
-                  [
-                      "app-store-connect",
-                      "bundle-ids",
-                      "enable-capabilities",
-                      bundle_resource_id,
-                      "--capability",
-                      "Sign In with Apple",
-                  ],
-                  check=True,
-              )
-          profiles = run([
-              "bundle-ids",
-              "profiles",
-              "--bundle-ids",
-              bundle_resource_id,
-              "--type",
-              "IOS_APP_STORE",
-          ])
-          for profile in profiles:
-              profile_id = profile.get("id")
-              if not profile_id:
-                  continue
-              subprocess.run(
-                  ["app-store-connect", "profiles", "delete", profile_id, "--ignore-not-found"],
-                  check=True,
-              )
-          print("Sign in with Apple is enabled for", bundle)
-          PY
+
+          function privateKey() {
+            let pem = process.env.APP_STORE_CONNECT_PRIVATE_KEY || "";
+            const keyPath = process.env.APP_STORE_CONNECT_PRIVATE_KEY_PATH || "";
+            if (!pem.includes("BEGIN PRIVATE KEY") && keyPath && fs.existsSync(keyPath)) {
+              pem = fs.readFileSync(keyPath, "utf8");
+            }
+            pem = pem.replace(/\\n/g, "\n").trim();
+            if (!pem.includes("BEGIN PRIVATE KEY")) {
+              try {
+                const decoded = Buffer.from(pem, "base64").toString("utf8");
+                if (decoded.includes("BEGIN PRIVATE KEY")) pem = decoded;
+              } catch (err) {}
+            }
+            if (!pem.includes("BEGIN PRIVATE KEY")) {
+              throw new Error("App Store Connect private key is missing or not a PEM");
+            }
+            return pem;
+          }
+
+          function token() {
+            const issuer = process.env.APP_STORE_CONNECT_ISSUER_ID || "";
+            const keyId = process.env.APP_STORE_CONNECT_KEY_IDENTIFIER || "";
+            if (!issuer || !keyId) {
+              throw new Error("App Store Connect issuer id or key id is missing");
+            }
+            const now = Math.floor(Date.now() / 1000);
+            const header = b64url(JSON.stringify({ alg: "ES256", kid: keyId, typ: "JWT" }));
+            const payload = b64url(JSON.stringify({
+              iss: issuer,
+              iat: now - 30,
+              exp: now + 19 * 60,
+              aud: "appstoreconnect-v1",
+            }));
+            const signingInput = `${header}.${payload}`;
+            const signature = crypto.sign("sha256", Buffer.from(signingInput), {
+              key: privateKey(),
+              dsaEncoding: "ieee-p1363",
+            });
+            if (signature.length !== 64) {
+              throw new Error("ES256 signature was not 64 bytes");
+            }
+            return `${signingInput}.${b64url(signature)}`;
+          }
+
+          function api(method, path, body) {
+            const jwt = token();
+            const payload = body ? JSON.stringify(body) : null;
+            return new Promise((resolve, reject) => {
+              const req = https.request(
+                {
+                  method,
+                  hostname: "api.appstoreconnect.apple.com",
+                  path: "/v1" + path,
+                  headers: {
+                    Authorization: "Bearer " + jwt,
+                    Accept: "application/json",
+                    ...(payload ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } : {}),
+                  },
+                },
+                (res) => {
+                  const chunks = [];
+                  res.on("data", (chunk) => chunks.push(chunk));
+                  res.on("end", () => {
+                    const raw = Buffer.concat(chunks).toString("utf8");
+                    let json = {};
+                    if (raw) {
+                      try {
+                        json = JSON.parse(raw);
+                      } catch (err) {
+                        json = { raw: raw.slice(0, 2000) };
+                      }
+                    }
+                    resolve({ status: res.statusCode, json });
+                  });
+                }
+              );
+              req.on("error", reject);
+              if (payload) req.write(payload);
+              req.end();
+            });
+          }
+
+          function fail(message, response) {
+            const detail = response ? JSON.stringify(response.json).slice(0, 2000) : "";
+            throw new Error(detail ? `${message} (${response.status}): ${detail}` : message);
+          }
+
+          async function bundleResourceId() {
+            const query = new URLSearchParams({ "filter[identifier]": bundle, limit: "200" }).toString();
+            let response = await api("GET", "/bundleIds?" + query);
+            if (response.status !== 200) fail("Could not list bundle IDs", response);
+            let items = (response.json.data || []).filter((item) => item.attributes && item.attributes.identifier === bundle);
+            if (!items.length) {
+              response = await api("POST", "/bundleIds", {
+                data: {
+                  type: "bundleIds",
+                  attributes: { identifier: bundle, name: "Piste", platform: "IOS" },
+                },
+              });
+              if (response.status === 201 && response.json.data) return response.json.data.id;
+              if (response.status !== 409) fail("Could not create the review bundle ID", response);
+              response = await api("GET", "/bundleIds?" + query);
+              if (response.status !== 200) fail("Could not list bundle IDs after create", response);
+              items = (response.json.data || []).filter((item) => item.attributes && item.attributes.identifier === bundle);
+            }
+            if (!items.length) throw new Error("Review bundle ID was not found after create");
+            return items[0].id;
+          }
+
+          async function enableAppleSignIn(resourceId) {
+            const listed = await api("GET", `/bundleIds/${resourceId}/bundleIdCapabilities?limit=200`);
+            if (listed.status !== 200) fail("Could not list capabilities", listed);
+            const enabled = (listed.json.data || []).some((item) => item.attributes && item.attributes.capabilityType === "APPLE_ID_AUTH");
+            if (enabled) {
+              console.log("APPLE_ID_AUTH already enabled");
+              return;
+            }
+            const variants = [
+              { capabilityType: "APPLE_ID_AUTH", settings: [] },
+              { capabilityType: "APPLE_ID_AUTH" },
+            ];
+            let last = null;
+            for (const attributes of variants) {
+              last = await api("POST", "/bundleIdCapabilities", {
+                data: {
+                  type: "bundleIdCapabilities",
+                  attributes,
+                  relationships: { bundleId: { data: { type: "bundleIds", id: resourceId } } },
+                },
+              });
+              if (last.status === 201 || last.status === 409) {
+                console.log("Enabled APPLE_ID_AUTH", last.status);
+                return;
+              }
+              if (last.status !== 400 && last.status !== 422) break;
+            }
+            fail("Could not enable Sign in with Apple. The Piste API key needs Admin access", last);
+          }
+
+          async function appStoreProfiles(resourceId) {
+            const related = await api("GET", `/bundleIds/${resourceId}/profiles?limit=200`);
+            if (related.status === 200) {
+              return (related.json.data || []).filter((item) => item.attributes && item.attributes.profileType === "IOS_APP_STORE");
+            }
+            const listed = await api("GET", "/profiles?filter[profileType]=IOS_APP_STORE&limit=200");
+            if (listed.status !== 200) fail("Could not list provisioning profiles", listed);
+            const matched = [];
+            for (const profile of listed.json.data || []) {
+              const owner = await api("GET", `/profiles/${profile.id}/bundleId`);
+              if (owner.status === 200 && owner.json.data && owner.json.data.attributes && owner.json.data.attributes.identifier === bundle) {
+                matched.push(profile);
+              }
+            }
+            return matched;
+          }
+
+          async function deleteAppStoreProfiles(resourceId) {
+            const profiles = await appStoreProfiles(resourceId);
+            for (const profile of profiles) {
+              const deleted = await api("DELETE", `/profiles/${profile.id}`);
+              if (deleted.status !== 204 && deleted.status !== 404) fail("Could not delete App Store profile " + profile.id, deleted);
+              console.log("Deleted App Store profile", profile.id, deleted.status);
+            }
+            if (!profiles.length) console.log("No App Store profile to delete");
+          }
+
+          async function main() {
+            const resourceId = await bundleResourceId();
+            console.log("Bundle ID resource", resourceId);
+            if (process.argv[2] !== "delete-profiles") await enableAppleSignIn(resourceId);
+            await deleteAppStoreProfiles(resourceId);
+            console.log("Sign in with Apple is ready for", bundle);
+          }
+
+          main().catch((err) => {
+            console.error(err.message || String(err));
+            process.exit(1);
+          });
+          JS
+          node /tmp/piste-asc.js enable
 
       - name: Set up keychain
         script: |
@@ -316,10 +396,13 @@ workflows:
       - name: Fetch App Store signing files
         script: |
           set -e
-          app-store-connect fetch-signing-files "com.piste.lifeshare" \
-            --type IOS_APP_STORE \
-            --create
-          python3 - <<'PY'
+          attempt=1
+          while [ "$attempt" -le 3 ]; do
+            node /tmp/piste-asc.js delete-profiles
+            app-store-connect fetch-signing-files "com.piste.lifeshare" \
+              --type IOS_APP_STORE \
+              --create
+            if python3 - <<'PY'
           import pathlib
           import plistlib
           import subprocess
@@ -330,20 +413,35 @@ workflows:
               pathlib.Path.home() / "Library/MobileDevice/Provisioning Profiles",
           ]
           matched = False
+          ready = False
           for root in roots:
+              if not root.exists():
+                  continue
               for profile in root.glob("*.mobileprovision"):
-                  decoded = subprocess.run(["security", "cms", "-D", "-i", str(profile)], capture_output=True, check=True)
+                  decoded = subprocess.run(["security", "cms", "-D", "-i", str(profile)], capture_output=True)
+                  if decoded.returncode != 0:
+                      continue
                   plist = plistlib.loads(decoded.stdout)
                   app_id = plist.get("Entitlements", {}).get("application-identifier", "")
-                  if not app_id.endswith(bundle):
+                  if not app_id.endswith("." + bundle):
                       continue
                   matched = True
-                  if "com.apple.developer.applesignin" not in plist.get("Entitlements", {}):
-                      raise SystemExit("The App Store profile has no Sign in with Apple")
-          if not matched:
-              raise SystemExit("No App Store profile for the review bundle was downloaded")
-          print("Release profile includes Sign in with Apple")
+                  if "com.apple.developer.applesignin" in plist.get("Entitlements", {}):
+                      ready = True
+          if matched and ready:
+              print("Release profile includes Sign in with Apple")
+              raise SystemExit(0)
+          raise SystemExit(1)
           PY
+            then
+              exit 0
+            fi
+            echo "Profile is not ready yet, retry ${attempt}"
+            attempt=$((attempt + 1))
+            sleep 8
+          done
+          echo "The App Store profile has no Sign in with Apple"
+          exit 1
 
       - name: Add signing certificate
         script: |
