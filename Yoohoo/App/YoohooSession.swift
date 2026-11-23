@@ -2,8 +2,8 @@ import SwiftUI
 
 enum YoohooConfig {
     #if YOOHOO_APPSTORE
-    static let supabaseURL = ""
-    static let supabaseKey = ""
+    static let supabaseURL = "https://unxvkrjhqswcqucustkg.supabase.co"
+    static let supabaseKey = "sb_publishable_rkwl5-_ZmfteDnxdz8HLhQ_wTBXPCAN"
     #else
     static let supabaseURL = "https://wjbdbuooefqvsovjjwhq.supabase.co"
     static let supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqYmRidW9vZWZxdnNvdmpqd2hxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4NDQwMTYsImV4cCI6MjEwOTQyMDAxNn0.9yUcWTyUR9YH36vGGeYVSj327vn1YUVcnkciCcxsDV0"
@@ -25,7 +25,15 @@ struct CoinPack: Identifiable {
 
     static var catalog: [CoinPack] {
         #if YOOHOO_APPSTORE
-        return []
+        return [
+            CoinPack(id: "ricfnjspieprhkxk", amount: 400, price: "$0.99", art: "Coin5"),
+            CoinPack(id: "ubailncxfjfeotky", amount: 800, price: "$1.99", art: "Coin10"),
+            CoinPack(id: "pqyqniwbkwhkritp", amount: 2450, price: "$4.99", art: "Coin15"),
+            CoinPack(id: "btlhbcomllaxhafj", amount: 5150, price: "$9.99", art: "Coin20"),
+            CoinPack(id: "miihbdkruepvdlyo", amount: 10800, price: "$19.99", art: "Coin25"),
+            CoinPack(id: "dtxhgdweskutnqmi", amount: 29400, price: "$49.99", art: "Coin30"),
+            CoinPack(id: "ewfkthoykyblhsvr", amount: 63700, price: "$99.99", art: "Coin35")
+        ]
         #else
         return [
             CoinPack(id: "6zdz3v2alwput2vo2", amount: 400, price: "$0.99", art: "Coin5"),
