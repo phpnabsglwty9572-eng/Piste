@@ -12,9 +12,12 @@
 #   Workflow: Yoohoo Test App Store Connect
 #   submit_to_testflight: false
 #
-# Review upload is manual. Write this product's own bundle into the release
-# workflow before running it. The script does not read $BUNDLE_ID, refuses the
-# test signing key, and refuses the test bundle.
+# Review TestFlight (manual). Workflow: Piste
+# Bundle ID: com.piste.lifeshare
+# Display name: Piste
+# Developer Portal API key name: Piste
+# Script hardcodes the review bundle, sets YOOHOO_APPSTORE, and refuses the
+# test bundle. Fill APP_STORE_APPLE_ID with this Connect App's numeric ID.
 
 workflows:
   yoohoo-ios-pgyer:
@@ -44,6 +47,19 @@ workflows:
         script: |
           sed -i '' -E 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/PRODUCT_BUNDLE_IDENTIFIER = com.sewhkek.sjdeww;/g' \
             "$CM_BUILD_DIR/$XCODE_PROJECT/project.pbxproj"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re
+          info = Path(os.environ["CM_BUILD_DIR"]) / "Yoohoo" / "Info.plist"
+          text = info.read_text()
+          text = re.sub(
+              r"(<key>CFBundleDisplayName</key>\s*<string>)[^<]+(</string>)",
+              r"\1test\2",
+              text,
+              count=1,
+          )
+          info.write_text(text)
+          PY
       - name: Fetch Ad Hoc signing files
         script: |
           app-store-connect fetch-signing-files "com.sewhkek.sjdeww" \
@@ -83,6 +99,19 @@ workflows:
         script: |
           sed -i '' -E 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/PRODUCT_BUNDLE_IDENTIFIER = com.sewhkek.sjdeww;/g' \
             "$CM_BUILD_DIR/$XCODE_PROJECT/project.pbxproj"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re
+          info = Path(os.environ["CM_BUILD_DIR"]) / "Yoohoo" / "Info.plist"
+          text = info.read_text()
+          text = re.sub(
+              r"(<key>CFBundleDisplayName</key>\s*<string>)[^<]+(</string>)",
+              r"\1test\2",
+              text,
+              count=1,
+          )
+          info.write_text(text)
+          PY
       - name: Fetch App Store signing files
         script: |
           app-store-connect fetch-signing-files "com.sewhkek.sjdeww" \
@@ -106,60 +135,32 @@ workflows:
         auth: integration
         submit_to_testflight: false
 
-  yoohoo-ios-release:
-    name: Yoohoo Release App Store Connect
-    max_build_duration: 90
+  piste-ios-testflight:
+    name: Piste
+    max_build_duration: 120
     instance_type: mac_mini_m2
     integrations:
-      app_store_connect: yoohoo
+      app_store_connect: Piste
     environment:
-      groups:
-        - yoohoo_release_credentials
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.piste.lifeshare
       vars:
         XCODE_PROJECT: Yoohoo.xcodeproj
         XCODE_SCHEME: Yoohoo
+        APP_STORE_APPLE_ID: "0"
       xcode: latest
     scripts:
-      - name: Reject the test signing key and the test bundle
+      - name: Use the review bundle and App Store compilation flag
         script: |
-          python3 - <<'PY'
-          import hashlib, os, subprocess, tempfile
-          bundle = "SET_YOOHOO_REVIEW_BUNDLE_ID"
-          if bundle in {"", "SET_YOOHOO_REVIEW_BUNDLE_ID", "com.sewhkek.sjdeww", "com.lume.letht"}:
-              raise SystemExit("Write this product's own review bundle into the release workflow before uploading")
-          key = os.environ.get("CERTIFICATE_PRIVATE_KEY", "")
-          if "PRIVATE KEY" not in key:
-              raise SystemExit("yoohoo_release_credentials must define CERTIFICATE_PRIVATE_KEY")
-          fd, name = tempfile.mkstemp()
-          os.close(fd)
-          try:
-              with open(name, "w", encoding="utf-8") as handle:
-                  handle.write(key if key.endswith("\n") else key + "\n")
-              os.chmod(name, 0o600)
-              result = subprocess.run(
-                  ["openssl", "rsa", "-in", name, "-noout", "-modulus"],
-                  check=False, capture_output=True, text=True)
-          finally:
-              os.remove(name)
-          if result.returncode != 0 or "=" not in result.stdout:
-              raise SystemExit("The release signing key could not be read")
-          raw = bytes.fromhex(result.stdout.strip().split("=", 1)[1]).lstrip(b"\x00")
-          digest = hashlib.sha256(raw).hexdigest()
-          if digest == "53fd99d8b74e2d108978977b38da2075f91340219b74387792bab8efe38176c5":
-              raise SystemExit("Refusing the test account signing key")
-          PY
-      - name: Set up keychain
-        script: keychain initialize
-      - name: Use the review bundle ID
-        script: |
+          set -e
           python3 - <<'PY'
           import os, re
           from pathlib import Path
-          bundle = "SET_YOOHOO_REVIEW_BUNDLE_ID"
-          if bundle in {"", "SET_YOOHOO_REVIEW_BUNDLE_ID", "com.sewhkek.sjdeww", "com.lume.letht"}:
-              raise SystemExit("Write this product's own review bundle into the release workflow before uploading")
-          path = Path(os.environ["CM_BUILD_DIR"]) / os.environ["XCODE_PROJECT"] / "project.pbxproj"
-          text = path.read_text()
+          bundle = "com.piste.lifeshare"
+          root = Path(os.environ["CM_BUILD_DIR"])
+          project = root / os.environ["XCODE_PROJECT"] / "project.pbxproj"
+          text = project.read_text()
           text = re.sub(r"PRODUCT_BUNDLE_IDENTIFIER = [^;]+;", f"PRODUCT_BUNDLE_IDENTIFIER = {bundle};", text)
           text = re.sub(r"\n[ \t]*DEVELOPMENT_TEAM = 35TUXP935T;", "", text)
           parts = text.split("name = Release;")
@@ -176,18 +177,26 @@ workflows:
           updated = "name = Release;".join([parts[0], middle, *parts[2:]])
           if "com.sewhkek.sjdeww" in updated:
               raise SystemExit("Test bundle ID is still in the Xcode project")
-          path.write_text(updated)
+          project.write_text(updated)
+          info = root / "Yoohoo" / "Info.plist"
+          plist = info.read_text()
+          plist = re.sub(
+              r"(<key>CFBundleDisplayName</key>\s*<string>)[^<]+(</string>)",
+              r"\1Piste\2",
+              plist,
+              count=1,
+          )
+          info.write_text(plist)
           print("Release bundle ID is", bundle)
           PY
+
       - name: Enable Sign in with Apple for the review bundle
         script: |
           python3 - <<'PY'
           import json
           import subprocess
 
-          bundle = "SET_YOOHOO_REVIEW_BUNDLE_ID"
-          if bundle in {"", "SET_YOOHOO_REVIEW_BUNDLE_ID", "com.sewhkek.sjdeww", "com.lume.letht"}:
-              raise SystemExit("Write this product's own review bundle into the release workflow before uploading")
+          bundle = "com.piste.lifeshare"
 
           def run(args):
               result = subprocess.run(["app-store-connect", "--json", *args], capture_output=True, text=True)
@@ -212,7 +221,7 @@ workflows:
           ])
           bundles = [item for item in bundles if item.get("attributes", {}).get("identifier") == bundle]
           if not bundles:
-              created = run(["bundle-ids", "create", bundle, "--platform", "IOS", "--name", "Yoohoo"])
+              created = run(["bundle-ids", "create", bundle, "--platform", "IOS", "--name", "Piste"])
               bundles = created if isinstance(created, list) else [created]
           bundle_resource_id = bundles[0]["id"]
           capabilities = run(["bundle-ids", "capabilities", bundle_resource_id])
@@ -234,16 +243,16 @@ workflows:
               )
           print("Sign in with Apple is enabled for", bundle)
           PY
+
+      - name: Set up keychain
+        script: |
+          set -e
+          keychain initialize
+
       - name: Fetch App Store signing files
         script: |
-          python3 - <<'PY'
-          import os
-          bundle = "SET_YOOHOO_REVIEW_BUNDLE_ID"
-          if bundle in {"", "SET_YOOHOO_REVIEW_BUNDLE_ID", "com.sewhkek.sjdeww", "com.lume.letht"}:
-              raise SystemExit("Write this product's own review bundle into the release workflow before uploading")
-          os.environ["YOOHOO_REVIEW_BUNDLE"] = bundle
-          PY
-          app-store-connect fetch-signing-files "SET_YOOHOO_REVIEW_BUNDLE_ID" \
+          set -e
+          app-store-connect fetch-signing-files "com.piste.lifeshare" \
             --type IOS_APP_STORE \
             --create
           python3 - <<'PY'
@@ -251,7 +260,7 @@ workflows:
           import plistlib
           import subprocess
 
-          bundle = "SET_YOOHOO_REVIEW_BUNDLE_ID"
+          bundle = "com.piste.lifeshare"
           roots = [
               pathlib.Path.home() / "Library/Developer/Xcode/UserData/Provisioning Profiles",
               pathlib.Path.home() / "Library/MobileDevice/Provisioning Profiles",
@@ -271,20 +280,95 @@ workflows:
               raise SystemExit("No App Store profile for the review bundle was downloaded")
           print("Release profile includes Sign in with Apple")
           PY
+
       - name: Add signing certificate
-        script: keychain add-certificates
-      - name: Apply provisioning profiles
-        script: xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT"
-      - name: Build App Store IPA
         script: |
+          set -e
+          keychain add-certificates
+
+      - name: Set up provisioning profiles settings on Xcode project
+        script: |
+          set -e
+          xcode-project use-profiles \
+            --project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            --archive-method app-store \
+            --code-signing-setup-verbose-logging \
+            --export-options-plist "$HOME/export_options.plist"
+
+      - name: Increment build number
+        script: |
+          set -e
+          cd "$CM_BUILD_DIR"
+          TF_BUILD=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || true)
+          APP_BUILD=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || true)
+          TF_BUILD=${TF_BUILD:-0}
+          APP_BUILD=${APP_BUILD:-0}
+          if ! [[ "$TF_BUILD" =~ ^[0-9]+$ ]]; then TF_BUILD=0; fi
+          if ! [[ "$APP_BUILD" =~ ^[0-9]+$ ]]; then APP_BUILD=0; fi
+          LATEST_BUILD_NUMBER=$TF_BUILD
+          if [ "$APP_BUILD" -gt "$LATEST_BUILD_NUMBER" ]; then
+            LATEST_BUILD_NUMBER=$APP_BUILD
+          fi
+          NEW_BUILD_NUMBER=$((LATEST_BUILD_NUMBER + 1))
+          echo "TestFlight latest: $TF_BUILD"
+          echo "App Store latest: $APP_BUILD"
+          echo "Using max: $LATEST_BUILD_NUMBER → next: $NEW_BUILD_NUMBER"
+          echo "NEW_BUILD_NUMBER=$NEW_BUILD_NUMBER" >> "$CM_ENV"
+          agvtool new-version -all "$NEW_BUILD_NUMBER"
+          agvtool what-version -terse
+
+      - name: Confirm review IAP identifiers
+        script: |
+          set -e
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          text = (Path(os.environ["CM_BUILD_DIR"]) / "Yoohoo/App/YoohooSession.swift").read_text()
+          start = text.find("#if YOOHOO_APPSTORE")
+          catalog = text.find("static var catalog")
+          chunk = text[catalog:]
+          appstore = chunk.split("#else", 1)[0]
+          ids = [
+              "ricfnjspieprhkxk",
+              "ubailncxfjfeotky",
+              "pqyqniwbkwhkritp",
+              "btlhbcomllaxhafj",
+              "miihbdkruepvdlyo",
+              "dtxhgdweskutnqmi",
+              "ewfkthoykyblhsvr",
+          ]
+          missing = [item for item in ids if item not in appstore]
+          if missing:
+              raise SystemExit("Review IAP IDs missing from YOOHOO_APPSTORE catalog: " + ",".join(missing))
+          leak = [item for item in ["6zdz3v2alwput2vo2", "com.sewhkek.sjdeww"] if item in appstore]
+          if leak:
+              raise SystemExit("Test identifiers leaked into the App Store catalog")
+          project = (Path(os.environ["CM_BUILD_DIR"]) / os.environ["XCODE_PROJECT"] / "project.pbxproj").read_text()
+          if "SWIFT_ACTIVE_COMPILATION_CONDITIONS = YOOHOO_APPSTORE;" not in project:
+              raise SystemExit("YOOHOO_APPSTORE is not on the Release target")
+          print("Review IAP IDs ready:", ",".join(ids))
+          PY
+
+      - name: Build ipa for distribution
+        script: |
+          set -e
           xcode-project build-ipa \
             --project "$CM_BUILD_DIR/$XCODE_PROJECT" \
             --scheme "$XCODE_SCHEME" \
-            --archive-flags="-destination 'generic/platform=iOS' PRODUCT_BUNDLE_IDENTIFIER=SET_YOOHOO_REVIEW_BUNDLE_ID"
+            --archive-xcargs "CURRENT_PROJECT_VERSION=$NEW_BUILD_NUMBER PRODUCT_BUNDLE_IDENTIFIER=com.piste.lifeshare SWIFT_ACTIVE_COMPILATION_CONDITIONS=YOOHOO_APPSTORE" \
+            --archive-flags="-destination 'generic/platform=iOS'"
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
     publishing:
+      email:
+        recipients:
+          - gusttavomacedo@icloud.com
+        notify:
+          success: true
+          failure: true
       app_store_connect:
         auth: integration
-        submit_to_testflight: false
+        submit_to_testflight: true
+        submit_to_app_store: false

@@ -1,30 +1,159 @@
-Privacy Policy
-Application Name: Yoohoo
-Effective Date: November 11, 2026
-Last Updated: November 11, 2026
-Contact Email: xxxx@email.com
-
-1. Information We Process
-When you create an account, we process the email address, password, display name, avatar, and profile background you provide.
-Sign in with Apple provides an Apple user identifier. Apple shares your name only on the first authorization, and the App keeps that name on the device so it can fill an empty profile name later.
-Posts, comments, messages, live-room activity, reports, blocks, and coin purchases are stored so the App can show them to you and to the people you interact with.
-
-2. How We Use Information
-We use this information to operate accounts, show content, deliver messages, credit coins after a confirmed purchase, and review reports.
-We do not sell personal information.
-
-3. Device Access
-The photo library is used only when you choose an avatar, a profile background, or a post attachment.
-The camera and microphone are used when you start a call or a live preview.
-
-4. Retention and Deletion
-You can delete your account from Settings. Deletion removes the profile and the content tied to it, except where we must keep a record for safety or legal reasons.
-You can also email xxxx@email.com with the subject "Account Deletion Request – Yoohoo".
-
-5. Children
-The App is for adults aged 18 or older. We do not knowingly collect information from children.
-
-6. Contact
-Application: Yoohoo
-Email: xxxx@email.com
-Child Safety Email: xxxx@email.com
+﻿Privacy Policy For Piste
+Effective Date: May 18, 2026
+1. Introduction
+Welcome to Piste ("Piste," "we," "us," or "our").
+Piste is a social community application designed for adults who enjoy skiing, snowboarding, outdoor activities, and sharing their experiences.
+We respect your privacy and are committed to protecting your personal information. This Privacy Policy explains how we collect, use, store, disclose, and protect information when you access or use our application and related services (collectively, the "Services").
+By using Piste, you acknowledge the data practices described in this Privacy Policy. Where required by applicable law, we will obtain your consent before processing your personal information.
+If you have any questions, please contact us at gusttavomacedo@icloud.com.
+2. Age Restrictions and Children's Privacy
+Piste is intended exclusively for adults aged 18 years or older.
+Individuals under the age of 18 are strictly prohibited from registering for an account or using our Services.
+We do not knowingly collect, solicit, or process personal information from children under 18.
+If we discover that an individual under 18 has created an account or provided personal information, we will take appropriate steps to disable the account and delete the associated personal information, subject to applicable legal requirements and necessary safety obligations.
+Parents, guardians, or other individuals who believe that a minor has provided personal information to Piste may contact us at gusttavomacedo@icloud.com.
+We maintain a zero-tolerance policy toward child sexual abuse and exploitation, including child sexual abuse material (CSAM).
+3. Information We Collect
+Depending on how you use Piste, we may collect the following categories of information.
+3.1 Account Information
+When you register for or use an account, we may collect:
+* Email address
+* Username and display name
+* Profile picture
+* Authentication and account identifiers
+* Profile information voluntarily provided by you
+3.2 User-Generated Content
+When you create posts or interact with the community, we may process:
+* Photos and videos you choose to upload
+* Text, captions, and descriptions
+* Audio recordings included in content you submit
+* Comments, likes, and other community interactions
+* Content reports and feedback submitted through the application
+Content you choose to publish may be visible to other users according to the application's available visibility settings.
+Please avoid sharing sensitive personal information in public posts.
+3.3 Camera Permission
+Piste may request access to your device's camera to allow you to capture photos or videos for community posts.
+Camera access is used only when you choose to use the relevant functionality.
+We do not activate your camera in the background for surveillance or unrelated purposes.
+You may deny or revoke camera permission through your device settings.
+3.4 Photo Library Permission
+Piste may request access to your photo library to allow you to select photos or videos for publication in community posts.
+We process media that you choose to provide through the application's upload functionality.
+We do not intentionally collect unrelated photos or videos from your personal library.
+You may manage or revoke photo library permissions through your device settings.
+3.5 Microphone Permission
+Piste may request microphone access when you choose to record videos or other supported media containing audio for community posts.
+Microphone access is used only in connection with user-initiated recording functionality.
+We do not intentionally record private conversations or activate the microphone for unrelated background monitoring.
+You may revoke microphone permission through your device settings.
+3.6 Device and Usage Information
+We may automatically collect limited technical and usage information, including:
+* Device type and operating system
+* Application version
+* Device or application identifiers
+* IP address and approximate location inferred from network information
+* Application events and feature interactions
+* Crash reports and diagnostic information
+* Performance and usage statistics
+We use this information to operate, secure, maintain, and improve our Services.
+3.7 Analytics and Attribution Through Adjust
+Piste integrates Adjust, a third-party mobile measurement and analytics service, to help us understand application performance, installation attribution, and user engagement.
+Depending on device settings, applicable permissions, and our technical configuration, Adjust may process information such as:
+* Application installation and launch events
+* Session and engagement events
+* Device and application information
+* IP address
+* Advertising identifiers, where permitted
+* Attribution information
+* Technical identifiers and performance data
+We use Adjust to measure application performance, analyze user engagement, evaluate acquisition campaigns, and improve our Services.
+Where required by applicable law, we request consent before accessing advertising identifiers or conducting activities requiring such consent.
+We respect applicable device-level privacy choices and restrictions.
+For information about Adjust's data practices, please visit:
+https://www.adjust.com/terms/privacy-policy/
+4. How We Use Information
+We may use personal information to:
+1. Create and manage user accounts.
+2. Provide community posting and interaction features.
+3. Process photos, videos, and audio voluntarily submitted by users.
+4. Maintain application functionality and performance.
+5. Analyze usage patterns and improve the user experience.
+6. Detect fraud, spam, abuse, and security threats.
+7. Investigate reports of prohibited or harmful content.
+8. Enforce our Terms of Service and Community Guidelines.
+9. Respond to user requests, complaints, and support inquiries.
+10. Comply with applicable legal and regulatory obligations.
+We do not use camera, photo library, or microphone permissions for purposes unrelated to the functionality described in this Policy.
+5. Legal Bases for Processing
+Where applicable data protection laws require a legal basis, we process personal information based on one or more of the following:
+* Performance of our contractual obligations to provide the Services.
+* Your consent, where required.
+* Our legitimate interests in maintaining security, preventing abuse, and improving the Services, where permitted by law.
+* Compliance with applicable legal obligations.
+You may withdraw consent where applicable, without affecting the lawfulness of processing conducted before withdrawal.
+6. Information Sharing and Disclosure
+We may share information with:
+Service Providers: Hosting, infrastructure, authentication, storage, analytics, and technical support providers that assist us in operating Piste.
+Analytics Providers: Adjust and other providers actually integrated into the Services, subject to applicable privacy requirements.
+Other Users: Content and profile information you voluntarily make available through community features.
+Legal Authorities: Competent authorities where disclosure is required by law or reasonably necessary to respond to lawful requests, protect users, or investigate serious misconduct.
+Business Transfers: Relevant parties involved in a merger, acquisition, restructuring, or transfer of assets, subject to applicable legal requirements.
+We do not sell personal information for monetary compensation.
+Any sharing for advertising, measurement, or other purposes will be disclosed and managed in accordance with applicable law.
+7. Data Storage and Security
+We implement reasonable technical and organizational measures designed to protect personal information against unauthorized access, loss, misuse, alteration, and disclosure.
+These measures may include access controls, encrypted communications, and restricted access to personal information.
+However, no electronic storage or transmission method can guarantee absolute security.
+We encourage users to protect their account credentials and avoid sharing sensitive information publicly.
+8. Data Retention
+We retain personal information only for as long as reasonably necessary to provide the Services, fulfill the purposes described in this Policy, resolve disputes, enforce agreements, and comply with applicable legal obligations.
+Retention periods may vary depending on the type of information and the reason for processing.
+When information is no longer necessary, we will delete or anonymize it using reasonable measures.
+Certain records may be retained for longer periods when required for legal compliance, security investigations, prevention of abuse, or the protection of users.
+9. Account Deletion and Data Removal
+Users may request deletion of their Piste account by sending an email to:
+gusttavomacedo@icloud.com
+Please use the subject line:
+Account Deletion Request – Piste
+To help us identify the relevant account, include the email address associated with your Piste account.
+We may request reasonable verification to confirm account ownership before processing the request.
+We will process verified account deletion requests within 30 calendar days.
+Upon completion, we will delete or anonymize associated personal information that is no longer required, including applicable account information and user-generated content, subject to legal, security, and regulatory retention requirements.
+Some information may be retained where necessary to comply with legal obligations, investigate abuse, prevent fraud, or protect the rights and safety of others.
+Information retained under these exceptions will be protected and deleted when the applicable retention requirement ends.
+You may also contact us at the same email address to request deletion of specific personal information, subject to applicable law.
+10. Your Privacy Rights
+Depending on your location and applicable law, you may have rights to:
+* Access personal information we hold about you.
+* Request correction of inaccurate information.
+* Request deletion of personal information.
+* Withdraw consent where processing is based on consent.
+* Object to or restrict certain processing activities.
+* Request a portable copy of eligible information.
+* Submit a complaint to an appropriate data protection authority.
+To exercise these rights, contact gusttavomacedo@icloud.com.
+We will respond in accordance with applicable legal requirements.
+11. International Data Processing
+Your information may be processed in countries or regions outside your place of residence when necessary to provide the Services.
+Where required by applicable law, we will implement appropriate safeguards for international transfers of personal information.
+12. Community Safety and Reporting
+Piste prohibits illegal, exploitative, abusive, and harmful content, including all forms of child sexual abuse and exploitation.
+Users may report inappropriate content, accounts, or behavior through the reporting features available within the application.
+Users may also submit safety complaints and reports to:
+gusttavomacedo@icloud.com
+We review reports and take appropriate action in accordance with our Terms of Service, Community Guidelines, and applicable law.
+Where child sexual abuse material is identified and verified, we will take appropriate measures, including restricting access to or removing prohibited content, preserving relevant evidence where legally required, and reporting to competent authorities as applicable.
+13. Third-Party Services
+Our Services may use third-party infrastructure, authentication, storage, and analytics technologies.
+These providers may process information according to their contractual obligations and applicable privacy policies.
+We encourage users to review the privacy policies of relevant third-party services.
+14. Changes to This Privacy Policy
+We may update this Privacy Policy to reflect changes in our Services, legal requirements, or data processing practices.
+When material changes occur, we will provide appropriate notice where required by law.
+The updated Policy will become effective on the date specified in the revised version.
+15. Contact Us
+For privacy inquiries, account deletion requests, personal information requests, and safety concerns, please contact:
+Application: Piste
+Email: gusttavomacedo@icloud.com
+Child Safety Contact: gusttavomacedo@icloud.com
+Effective Date: May 18, 2026

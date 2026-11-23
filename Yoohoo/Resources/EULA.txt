@@ -1,4 +1,4 @@
-Terms of Service
+﻿Terms of Service
 Effective Date: May 18, 2026
 1. Acceptance of Terms
 Welcome to Piste.
@@ -6,7 +6,7 @@ These Terms of Service ("Terms") govern your access to and use of the Piste mobi
 Piste is a social community for adults interested in skiing, snowboarding, outdoor experiences, and lifestyle sharing.
 By creating an account or using our Services, you agree to comply with these Terms, our Privacy Policy, and applicable Community Guidelines.
 If you do not agree to these Terms, you must not access or use the Services.
-For questions, contact xxxx@email.com.
+For questions, contact gusttavomacedo@icloud.com.
 2. Eligibility and Age Requirements
 Piste is intended exclusively for individuals aged 18 years or older.
 You must be at least 18 years old to register, access, or use our Services.
@@ -41,7 +41,7 @@ Users may interact with community content through available features such as lik
 Users may maintain personal profiles, manage their published content, and review their community activity.
 4.5 Feedback and Reporting
 Piste provides in-application functionality for users to submit feedback, report inappropriate content, and raise safety concerns.
-Users may also report violations by emailing xxxx@email.com.
+Users may also report violations by emailing gusttavomacedo@icloud.com.
 Features may be modified, improved, restricted, or discontinued in accordance with applicable law.
 5. User-Generated Content
 You retain ownership of original content you create and publish through Piste, subject to the rights of other parties.
@@ -97,7 +97,7 @@ Piste provides an in-app reporting mechanism through which users can submit:
 * Feedback concerning potential safety risks.
 * Reports of suspected CSAE or CSAM.
 Users may also contact our safety team directly:
-Safety Reporting Email: xxxx@email.com
+Safety Reporting Email: gusttavomacedo@icloud.com
 Reports involving suspected child exploitation are treated as high-priority safety matters.
 Users should not download, redistribute, or publicly repost suspected CSAM when submitting a report.
 7.5 Investigation and Enforcement
@@ -120,7 +120,7 @@ We will handle evidence and personal information in accordance with applicable l
 7.7 Designated Child Safety Contact
 Piste designates a responsible child safety contact to receive, assess, and coordinate responses to notifications and reports involving child sexual exploitation and abuse.
 Designated Child Safety Contact: Piste Child Safety Team
-Contact Email: xxxx@email.com
+Contact Email: gusttavomacedo@icloud.com
 The designated contact is responsible for:
 * Receiving child safety notifications from relevant distribution and service providers.
 * Reviewing reports and escalating suspected CSAE or CSAM incidents.
@@ -147,14 +147,14 @@ Reports may concern:
 * Suspected exploitation or child safety risks.
 * Other violations of our Community Guidelines.
 Reports can also be submitted to:
-xxxx@email.com
+gusttavomacedo@icloud.com
 We will review reports and take appropriate action based on their severity, available evidence, and applicable law.
 We may remove content, restrict functionality, issue warnings, suspend accounts, or permanently terminate access.
 9. Intellectual Property
 The Piste name, application design, software, logos, and related materials are protected by applicable intellectual property laws.
 Except as expressly permitted, users may not reproduce, distribute, modify, or commercially exploit our proprietary materials without authorization.
 Users must respect the intellectual property rights of other community members and third parties.
-If you believe content infringes your rights, please contact xxxx@email.com with relevant details.
+If you believe content infringes your rights, please contact gusttavomacedo@icloud.com with relevant details.
 10. Privacy and Personal Information
 Our collection and processing of personal information are described in our Privacy Policy.
 Piste may request access to device features, including the camera, photo library, and microphone, solely to support relevant user-initiated functions.
@@ -171,7 +171,7 @@ We may suspend, restrict, or terminate accounts that:
 Where appropriate and legally permitted, we may take action without prior notice to prevent harm or address serious violations.
 12. Account Deletion
 Users may request permanent deletion of their Piste account by emailing:
-xxxx@email.com
+gusttavomacedo@icloud.com
 Email subject:
 Account Deletion Request – Piste
 Please include the email address associated with your account.
@@ -206,9 +206,9 @@ Continued use of the Services after updated Terms take effect constitutes accept
 18. Contact Information
 For general support, account deletion, privacy inquiries, community reports, and safety concerns:
 Application: Piste
-General Contact: xxxx@email.com
-Account Deletion: xxxx@email.com
-Abuse Reporting: xxxx@email.com
+General Contact: gusttavomacedo@icloud.com
+Account Deletion: gusttavomacedo@icloud.com
+Abuse Reporting: gusttavomacedo@icloud.com
 Designated Child Safety Contact: Piste Child Safety Team
-Child Safety Email: xxxx@email.com
+Child Safety Email: gusttavomacedo@icloud.com
 Effective Date: May 18, 2026
