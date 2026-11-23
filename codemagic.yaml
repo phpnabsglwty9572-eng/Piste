@@ -213,13 +213,18 @@ workflows:
                   data = data.get("data", [data])
               return data
 
+          def identifier_of(item):
+              if not isinstance(item, dict):
+                  return ""
+              attrs = item.get("attributes") or {}
+              return attrs.get("identifier") or item.get("identifier") or ""
+
           bundles = run([
               "bundle-ids", "list",
-              "--bundle-id-identifier", bundle,
+              "--identifier", bundle,
               "--platform", "IOS",
-              "--strict-match-identifier",
           ])
-          bundles = [item for item in bundles if item.get("attributes", {}).get("identifier") == bundle]
+          bundles = [item for item in bundles if identifier_of(item) == bundle]
           if not bundles:
               created = run(["bundle-ids", "create", bundle, "--platform", "IOS", "--name", "Piste"])
               bundles = created if isinstance(created, list) else [created]
